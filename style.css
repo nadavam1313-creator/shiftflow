@@ -178,3 +178,11 @@ p[dir=ltr], b[dir=ltr] { text-align: end; }
 .hub a { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 18px 12px; text-align: center; font-weight: 700; min-height: 96px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
 .hub a span { font-size: 28px; }
 .confirm-row { display: flex; gap: 8px; margin-top: 8px; }
+
+/* leaderboard table */
+table.board { width: 100%; border-collapse: collapse; font-size: 14px; }
+.board th { background: #f3f4f8; color: var(--muted); font-weight: 600; font-size: 12px; text-align: start; padding: 10px 8px; }
+.board td { padding: 12px 8px; border-top: 1px solid var(--line); }
+.board tr.first td { background: var(--gold-soft); }
+.board tr.me td { background: var(--primary-soft); }
+.board .rank-cell { font-size: 20px; width: 44px; text-align: center; }

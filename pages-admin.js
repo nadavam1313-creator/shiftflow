@@ -6,8 +6,7 @@ import {
 } from "./lib.js";
 
 // ================= leaderboard =================
-// Employees see only their own place and points; managers see the full table;
-// only admins see and edit the prize amounts (enforced in the database too).
+// Everyone sees the full table (places and points); only admins see and edit the prize amounts.
 export function Leaderboard({ profile }) {
   const mgr = isManagerRole(profile.role);
   const admin = profile.role === "admin";
@@ -25,13 +24,8 @@ export function Leaderboard({ profile }) {
   const second = b.second_prize ?? 200;
   const board = data?.board || [];
   const mine = board.find((e) => e.email === profile.email);
-
-  const row = (e) => html`<div class=${"list-item " + (Number(e.rank) === 1 ? "gold" : "")}>
-    <span class="rank">${["🥇", "🥈", "🥉"][Number(e.rank) - 1] || "#" + e.rank}</span>
-    <div class="grow"><b>${e.name}</b>${e.email === profile.email && html` <span class="pill">את/ה</span>`}</div>
-    <div class="center-text"><b class="big">${e.points}</b><p class="small muted">נקודות</p></div>
-    ${admin && Number(e.rank) <= 2 && html`<span class="pill gold">₪${Number(e.rank) === 1 ? first : second}</span>`}
-  </div>`;
+  // the closest person above me (to show how many points I need to pass them)
+  const ahead = mine && [...board].reverse().find((e) => Number(e.points) > Number(mine.points));
 
   return html`<div class="stack">
     <div class="row between wrap gap">
@@ -44,16 +38,28 @@ export function Leaderboard({ profile }) {
       ? html`<div class="note gold"><b>🥇 מקום ראשון: ₪${first} • 🥈 מקום שני: ₪${second}</b><p class="small">רק אתה רואה את הסכומים</p></div>`
       : html`<div class="note gold"><b>🥇 בסוף החודש המקומות הראשונים זוכים בפרס — תתחרו! 🎉</b></div>`}
     ${loading ? html`<${Spinner} />` : error ? html`<${ErrorBox} error=${error} retry=${reload} />`
-      : !mgr
-        ? (mine
-            ? html`<div class="card center-text">
-                <p class="muted">המקום שלך החודש</p>
-                <p class="huge">${["🥇", "🥈", "🥉"][Number(mine.rank) - 1] || "#" + mine.rank}</p>
-                <p class="big">מקום ${mine.rank} · ${mine.points} נקודות</p>
-              </div>`
-            : html`<div class="empty"><p>עוד אין לך נקודות החודש — כל משימה שמסמנים מוסיפה נקודות 💪</p></div>`)
-        : board.length === 0 ? html`<div class="empty"><p>אין נתונים לחודש זה עדיין</p></div>`
-        : board.map(row)}
+      : board.length === 0 ? html`<div class="empty"><p>אין נתונים לחודש זה עדיין</p></div>`
+      : html`
+        ${mine
+          ? html`<div class="card center-text">
+              <p class="muted">המקום שלך החודש</p>
+              <p class="big">${["🥇", "🥈", "🥉"][Number(mine.rank) - 1] || ""} מקום ${mine.rank} · ${mine.points} נקודות</p>
+              ${ahead && html`<p class="small" style="margin-top:4px">חסרות לך <b>${Number(ahead.points) - Number(mine.points) + 1}</b> נקודות כדי לעקוף את ${ahead.name} 🚀</p>`}
+              ${Number(mine.rank) === 1 && html`<p class="small" style="margin-top:4px">את/ה בראש הטבלה! 👑</p>`}
+            </div>`
+          : !mgr && html`<div class="note">עוד אין לך נקודות החודש — כל משימה שמסמנים מוסיפה נקודות 💪</div>`}
+        <div class="card" style="padding:0;overflow:hidden">
+          <table class="board">
+            <thead><tr><th>מקום</th><th>עובד</th><th>נקודות</th><th>פער מהמקום הראשון</th>${admin && html`<th>פרס</th>`}</tr></thead>
+            <tbody>${board.map((e) => html`<tr class=${(e.email === profile.email ? "me " : "") + (Number(e.rank) === 1 ? "first" : "")}>
+              <td class="rank-cell">${["🥇", "🥈", "🥉"][Number(e.rank) - 1] || e.rank}</td>
+              <td><b>${e.name}</b>${e.email === profile.email && html` <span class="pill">את/ה</span>`}</td>
+              <td><b>${e.points}</b></td>
+              <td class="muted">${Number(e.rank) === 1 ? "—" : `-${Number(board[0].points) - Number(e.points)}`}</td>
+              ${admin && html`<td>${Number(e.rank) <= 2 ? html`<span class="pill gold">₪${Number(e.rank) === 1 ? first : second}</span>` : ""}</td>`}
+            </tr>`)}</tbody>
+          </table>
+        </div>`}
     ${admin && !loading && !error && html`<${BonusPanel} month=${month} bonus=${data.bonus} onSaved=${(r) => setData((d) => ({ ...d, bonus: r }))} />`}
   </div>`;
 }
