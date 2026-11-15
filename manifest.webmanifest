@@ -1,0 +1,19 @@
+{
+  "name": "ShiftFlow — קבוצת באולינג פארק",
+  "short_name": "ShiftFlow",
+  "description": "משמרות, משימות ותחרות לעובדי באולינג פארק",
+  "lang": "he",
+  "dir": "rtl",
+  "id": "/shiftflow/",
+  "start_url": "/shiftflow/",
+  "scope": "/shiftflow/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f6f7fb",
+  "theme_color": "#4f46e5",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

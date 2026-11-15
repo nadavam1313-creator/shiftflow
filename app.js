@@ -4,6 +4,7 @@ import {
   todayIL, shiftPhaseNow,
 } from "./lib.js";
 import { Home, Category, ZoneTasks, History } from "./pages-tasks.js";
+import { InstallCard } from "./install.js";
 import { ShiftRequest, PublishedSchedule, ShiftManager, ScheduleEditor } from "./pages-shifts.js";
 import { Leaderboard, ManagerDashboard, Admin } from "./pages-admin.js";
 
@@ -143,9 +144,9 @@ function AuthScreen() {
 
   return html`<div class="auth">
     <div class="auth-card">
-      <div class="logo">🎳</div>
+      <img class="logo-img" src="icon-192.png" alt="ShiftFlow" />
       <h1>ShiftFlow</h1>
-      <p class="muted">באולינג פארק — ניהול משמרות</p>
+      <p class="muted">קבוצת באולינג פארק</p>
       <form onSubmit=${submit}>
         ${mode === "signup" && html`<label>שם מלא<input required autocomplete="name" value=${fullName} onInput=${(e) => setFullName(e.target.value)} placeholder="למשל: דנה כהן" /></label>`}
         <label>אימייל<input type="email" required dir="ltr" value=${email} onInput=${(e) => setEmail(e.target.value)} autocomplete="email" /></label>
@@ -160,6 +161,7 @@ function AuthScreen() {
         ${mode !== "signup" && html`<a onClick=${() => { setMode("signup"); setMsg(null); }}>עובד חדש? הרשמה</a>`}
         ${mode !== "forgot" && html`<a onClick=${() => { setMode("forgot"); setMsg(null); }}>שכחתי סיסמה</a>`}
       </div>
+      <div class="mt"><${InstallCard} /></div>
     </div>
   </div>`;
 }
@@ -216,7 +218,7 @@ function Shell({ profile, route }) {
   const logout = () => { if (window.confirm("לצאת מהחשבון?")) sb.auth.signOut(); };
   return html`
     <header class="top">
-      <a href="#/" class="brand">🎳 ShiftFlow</a>
+      <a href="#/" class="brand"><img src="icon-192.png" alt="" />ShiftFlow</a>
       <div class="who">
         <span>${profile.full_name || profile.email}</span>
         <span class="pill">${ROLE_LABELS[profile.role]}</span>
@@ -224,6 +226,7 @@ function Shell({ profile, route }) {
       </div>
     </header>
     <main class="main">
+      ${(route === "/" || route === "") && html`<${InstallCard} />`}
       ${isPaused(profile) && html`<div class="note gold launch">🚀 ShiftFlow מתחיל לפעול ב<b>${LAUNCH_LABEL}</b>. היום רק נרשמים ומתחברים. מחר נפתח סימון המשימות, והגשת משמרות פתוחה כל שבוע משלישי עד חמישי.</div>`}
       ${route === "/reset" ? html`<${ResetPassword} />` : html`<${Page} route=${route} profile=${profile} />`}
     </main>
@@ -294,3 +297,4 @@ async function trackLogin(p) {
 }
 
 render(html`<${App} />`, document.getElementById("app"));
+window.__sfReady && window.__sfReady();

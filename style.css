@@ -194,3 +194,24 @@ table.board { width: 100%; border-collapse: collapse; font-size: 14px; }
 .board-row:last-child { border-bottom: 0; }
 .board-row .thumb { flex: none; }
 .launch { margin-bottom: 12px; line-height: 1.5; }
+.brand { display: inline-flex; align-items: center; gap: 8px; }
+.brand img { width: 30px; height: 30px; border-radius: 8px; }
+.auth-card .logo-img { width: 84px; height: 84px; border-radius: 22px; box-shadow: 0 8px 24px rgba(79,70,229,.3); }
+.install-card { display: flex; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; margin-bottom: 12px; text-align: start; }
+.install-card img { width: 40px; height: 40px; border-radius: 10px; flex: none; }
+.install-card p { margin: 2px 0 0; }
+ol.steps { padding-inline-start: 22px; line-height: 1.8; margin: 8px 0; }
+/* opening screen */
+#splash { position: fixed; inset: 0; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  background: radial-gradient(120% 80% at 50% 0%, #6366f1 0%, #4338ca 55%, #1e1b4b 100%); color: #fff; font-family: Heebo, system-ui, sans-serif; overflow: hidden; transition: opacity .45s ease, transform .45s ease; }
+#splash.out { opacity: 0; transform: scale(1.04); pointer-events: none; }
+#splash .sp-glow { position: absolute; width: 420px; height: 420px; border-radius: 50%; background: radial-gradient(circle, rgba(255,255,255,.22), transparent 65%); top: 50%; left: 50%; transform: translate(-50%, -62%); animation: spGlow 2.4s ease-in-out infinite; }
+#splash .sp-logo { width: 112px; height: 112px; border-radius: 30px; box-shadow: 0 18px 50px rgba(0,0,0,.35); animation: spPop .7s cubic-bezier(.2,1.4,.4,1) both; position: relative; }
+#splash .sp-name { font-size: 38px; font-weight: 800; letter-spacing: .5px; margin-top: 10px; animation: spUp .6s .25s both; position: relative; }
+#splash .sp-line { width: 0; height: 3px; border-radius: 3px; background: linear-gradient(90deg, #10b981, #a5b4fc); animation: spLine .7s .5s forwards; position: relative; }
+#splash .sp-group { font-size: 19px; font-weight: 500; color: #e0e7ff; letter-spacing: 1px; animation: spUp .6s .65s both; position: relative; }
+@keyframes spPop { from { transform: scale(.4) rotate(-12deg); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes spUp { from { transform: translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes spLine { to { width: 140px; } }
+@keyframes spGlow { 50% { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) { #splash * { animation: none !important; } #splash .sp-line { width: 140px; } }

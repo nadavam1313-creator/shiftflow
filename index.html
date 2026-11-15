@@ -5,13 +5,46 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#4f46e5" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <title>ShiftFlow — באולינג פארק</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎳</text></svg>" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="ShiftFlow" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <title>ShiftFlow — קבוצת באולינג פארק</title>
+  <meta name="description" content="משמרות, משימות ותחרות לעובדי באולינג פארק" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="ShiftFlow — קבוצת באולינג פארק" />
+  <meta property="og:description" content="נרשמים, מגישים משמרות ומסמנים משימות — הכל מהטלפון" />
+  <meta property="og:url" content="https://nadavam1313-creator.github.io/shiftflow/" />
+  <meta property="og:image" content="https://nadavam1313-creator.github.io/shiftflow/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" type="image/svg+xml" href="icon.svg" />
+  <link rel="icon" type="image/png" sizes="48x48" href="favicon-48.png" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <div id="splash" aria-hidden="true">
+    <div class="sp-glow"></div>
+    <img class="sp-logo" src="icon-192.png" alt="" />
+    <div class="sp-name">ShiftFlow</div>
+    <div class="sp-line"></div>
+    <div class="sp-group">קבוצת באולינג פארק</div>
+  </div>
+  <script>
+    // opening screen: once per visit, at least 1.4s, then fades out (app.js calls __sfReady when the app is drawn)
+    (function () {
+      var el = document.getElementById("splash"), t0 = Date.now(), seen = false;
+      try { seen = sessionStorage.getItem("sf-splash") === "1"; sessionStorage.setItem("sf-splash", "1"); } catch (e) {}
+      if (seen) { el.remove(); window.__sfReady = function () {}; return; }
+      var done = function () { if (!el.isConnected) return; el.classList.add("out"); setTimeout(function () { el.remove(); }, 500); };
+      window.__sfReady = function () { setTimeout(done, Math.max(0, 1400 - (Date.now() - t0))); };
+      setTimeout(done, 5000); // never block the app
+    })();
+  </script>
   <div id="app"><div class="center pad"><div class="spinner"></div></div></div>
   <noscript>צריך להפעיל JavaScript כדי להשתמש באפליקציה.</noscript>
   <script type="module" src="app.js"></script>
