@@ -67,7 +67,15 @@ function AuthScreen() {
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState(null);
+  const [msg, setMsg] = useState(() => {
+    // came back from the confirmation email (possibly opened on another device)
+    const fromEmail = /[?&](code|token_hash|type)=/.test(location.search) || /error_description|access_token/.test(location.hash);
+    if (fromEmail) {
+      try { history.replaceState(null, "", location.pathname); } catch { /* ignore */ }
+      return { ok: true, text: "המייל אושר ✓ עכשיו אפשר להתחבר עם האימייל והסיסמה." };
+    }
+    return null;
+  });
 
   const submit = async (e) => {
     e.preventDefault();
@@ -80,7 +88,8 @@ function AuthScreen() {
       } else if (mode === "signup") {
         if (password.length < 6) throw new Error("הסיסמה צריכה להיות לפחות 6 תווים");
         const { data, error } = await sb.auth.signUp({
-          email: email.trim(), password, options: { data: { full_name: fullName.trim() } },
+          email: email.trim(), password,
+          options: { data: { full_name: fullName.trim() }, emailRedirectTo: location.origin + location.pathname },
         });
         if (error) throw new Error(error.message.includes("registered") ? "האימייל הזה כבר רשום — נסה להתחבר" : error.message);
         if (!data.session) setMsg({ ok: true, text: "נרשמת! בדוק את המייל כדי לאשר את החשבון, ואז התחבר." });
