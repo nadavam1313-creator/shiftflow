@@ -427,7 +427,7 @@ function TaskForm({ task, zones, onClose, onSaved }) {
       <label>סדר<input type="number" inputmode="numeric" value=${f.sort_order} onInput=${set("sort_order")} /></label>
     </div>
     <label class="check"><input type="checkbox" checked=${f.requires_photo} onChange=${set("requires_photo")} /> חובה לצלם תמונה</label>
-    <label>סימון חלופי (לא חובה)<input value=${f.alt_done_label || ""} onInput=${set("alt_done_label")}
+    <label>סימון חלופי — שווה חצי מהנקודות (לא חובה)<input value=${f.alt_done_label || ""} onInput=${set("alt_done_label")}
       placeholder="למשל: בדקתי — אין מלאי למלא" /></label>
     <p class="small muted">כפתור נוסף שמסמן את המשימה כבוצעה עם ההערה הזאת.</p>
     <button class="btn primary wide" onClick=${save}>שמור</button>

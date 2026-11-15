@@ -150,6 +150,7 @@ function TaskItem({ task, completion, lockedByOther, onUpdate }) {
   const photo = safeUrl(completion?.photo_url);
   // optional second way to complete a task, e.g. "checked — nothing to refill" (set per task by the manager)
   const altLabel = (task.extra?.alt_done_label || "").trim();
+  const altPoints = Math.round((task.points || 0) / 2); // the alternative marking is worth half the points
 
   const mark = async (newStatus, extra = {}) => {
     setBusy(true);
@@ -170,7 +171,7 @@ function TaskItem({ task, completion, lockedByOther, onUpdate }) {
       const { error } = await sb.storage.from("task-photos").upload(path, small, { contentType: isJpeg ? "image/jpeg" : file.type });
       if (error) throw error;
       const url = sb.storage.from("task-photos").getPublicUrl(path).data.publicUrl;
-      await onUpdate({ status: "done", photo_url: url });
+      await onUpdate({ status: "done", photo_url: url, notes: null, alt_done: false });
       toast("התמונה נשמרה ✓");
     } catch (e) {
       toast("העלאת התמונה נכשלה: " + e.message, "bad");
@@ -192,12 +193,12 @@ function TaskItem({ task, completion, lockedByOther, onUpdate }) {
     ${lockedByOther
       ? html`<p class="small muted" style="margin-top:8px">🔒 סומן ע״י עובד אחר</p>`
       : html`<div class="row gap wrap" style="margin-top:8px">
-          <button class="btn sm ok" disabled=${busy} onClick=${() => (task.requires_photo && !photo ? setShowPhoto(true) : mark("done", { notes: null }))}>✓ בוצע</button>
-          <button class="btn sm" disabled=${busy} onClick=${() => mark("not_done", { notes: null })}>✗ לא בוצע</button>
+          <button class="btn sm ok" disabled=${busy} onClick=${() => (task.requires_photo && !photo ? setShowPhoto(true) : mark("done", { notes: null, alt_done: false }))}>✓ בוצע</button>
+          <button class="btn sm" disabled=${busy} onClick=${() => mark("not_done", { notes: null, alt_done: false })}>✗ לא בוצע</button>
           <label class=${"btn sm" + (busy ? " busy" : "")}>${busy ? "מעלה…" : "📷 תמונה"}<input type="file" accept="image/*" hidden onChange=${(e) => uploadPhoto(e.target)} /></label>
           ${photo && html`<img class="thumb" src=${photo} onClick=${() => setLightbox(true)} />`}
-          ${altLabel && html`<button class=${"btn sm wide alt-done" + (completion?.notes === altLabel ? " on" : "")} disabled=${busy}
-            onClick=${() => mark("done", { notes: altLabel })}>☑️ ${altLabel}</button>`}
+          ${altLabel && html`<button class=${"btn sm wide alt-done" + (completion?.alt_done ? " on" : "")} disabled=${busy}
+            onClick=${() => mark("done", { notes: altLabel, alt_done: true })}>☑️ ${altLabel} <span class="muted">(${altPoints} נק׳)</span></button>`}
         </div>`}
     ${lockedByOther && photo && html`<img class="thumb mt" src=${photo} onClick=${() => setLightbox(true)} />`}
     ${lightbox && html`<div class="lightbox" onClick=${() => setLightbox(false)}><img src=${photo} /></div>`}
