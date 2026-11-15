@@ -404,7 +404,7 @@ function TasksAdmin() {
     <select value=${zid} onChange=${(e) => setZoneId(e.target.value)}>
       ${data.zones.map((z) => html`<option value=${z.id}>${z.category} — ${z.name}</option>`)}
     </select>
-    <button class="btn primary" onClick=${() => setEdit({ zone_id: zid, title: "", description: "", points: 1, shift_phases: [PHASES[0]], requires_photo: false, sort_order: list.length })}>+ משימה חדשה</button>
+    <button class="btn primary" onClick=${() => setEdit({ zone_id: zid, title: "", description: "", points: 100, shift_phases: [PHASES[0]], requires_photo: false, sort_order: list.length })}>+ משימה חדשה</button>
     ${list.length === 0 && html`<div class="empty"><p>אין משימות באזור הזה</p></div>`}
     ${list.map((t) => html`<div class="list-item">
       <div class="grow"><b>${t.title}</b><p class="small muted">${t.shift_phases.join(" · ")} · ${t.points} נק׳ ${t.requires_photo ? "· 📷 חובה" : ""}</p></div>
@@ -422,7 +422,7 @@ function TaskForm({ task, zones, onClose, onSaved }) {
     if (!f.shift_phases.length) return toast("בחרו לפחות שלב משמרת אחד", "bad");
     const row = {
       zone_id: f.zone_id, title: f.title.trim(), description: f.description || null,
-      points: Number.isFinite(Number(f.points)) && f.points !== "" ? Math.max(0, Math.round(Number(f.points))) : 1,
+      points: Number.isFinite(Number(f.points)) && f.points !== "" ? Math.max(0, Math.round(Number(f.points))) : 100,
       shift_phases: f.shift_phases, requires_photo: !!f.requires_photo, sort_order: Number(f.sort_order) || 0,
       extra: { ...(task.extra || {}), alt_done_label: (f.alt_done_label || "").trim() || undefined },
     };
