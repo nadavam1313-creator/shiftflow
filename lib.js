@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { h, render } from "https://esm.sh/preact@10.24.3";
 import { useState, useEffect, useMemo, useRef, useCallback } from "https://esm.sh/preact@10.24.3/hooks";
 import htm from "https://esm.sh/htm@3.1.1";
-import { SUPABASE_URL, SUPABASE_ANON_KEY, CATEGORIES } from "./config.js";
+import { SUPABASE_URL, SUPABASE_ANON_KEY, CATEGORIES, LAUNCH_DATE } from "./config.js";
 
 export const html = htm.bind(h);
 export { render, useState, useEffect, useMemo, useRef, useCallback, CATEGORIES };
@@ -154,6 +154,9 @@ export const PHASES = ["פתיחת משמרת", "במהלך משמרת", "סוף
 
 export const ROLE_LABELS = { pending: "ממתין לאישור", employee: "עובד", manager: 'אחמ"ש', admin: "מנהל" };
 export const isManagerRole = (r) => r === "manager" || r === "admin";
+// before the launch date employees can only sign up and look around (managers can work normally)
+export const isPaused = (profile) => !isManagerRole(profile?.role) && todayIL() < LAUNCH_DATE;
+export const LAUNCH_LABEL = "יום שני 16.11";
 
 // ---------- toast ----------
 let toastListener = null;

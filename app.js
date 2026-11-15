@@ -1,6 +1,6 @@
 // ShiftFlow — app shell: auth, layout, routing
 import {
-  html, render, useState, useEffect, sb, q, toast, onToast, Spinner, isManagerRole, ROLE_LABELS,
+  html, render, useState, useEffect, sb, q, toast, onToast, Spinner, isManagerRole, ROLE_LABELS, isPaused, LAUNCH_LABEL,
   todayIL, shiftPhaseNow,
 } from "./lib.js";
 import { Home, Category, ZoneTasks, History } from "./pages-tasks.js";
@@ -187,6 +187,7 @@ function Pending({ profile, onRefresh }) {
     <div class="logo">⏳</div>
     <h2>החשבון ממתין לאישור</h2>
     <p class="muted">שלום ${profile.full_name || profile.email}! המנהל צריך לאשר אותך לפני שתוכל להשתמש באפליקציה.</p>
+    <p class="small muted">השימוש באפליקציה מתחיל ב${LAUNCH_LABEL}.</p>
     <button class="btn primary wide" onClick=${onRefresh}>בדוק שוב</button>
     <button class="btn wide" style="margin-top:8px" onClick=${() => sb.auth.signOut()}>יציאה</button>
   </div></div>`;
@@ -223,6 +224,7 @@ function Shell({ profile, route }) {
       </div>
     </header>
     <main class="main">
+      ${isPaused(profile) && html`<div class="note gold launch">🚀 ShiftFlow מתחיל לפעול ב<b>${LAUNCH_LABEL}</b>. היום רק נרשמים ומתחברים. מחר נפתח סימון המשימות, והגשת משמרות פתוחה כל שבוע משלישי עד חמישי.</div>`}
       ${route === "/reset" ? html`<${ResetPassword} />` : html`<${Page} route=${route} profile=${profile} />`}
     </main>
     <nav class="bottom">

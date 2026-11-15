@@ -1,6 +1,6 @@
 // ShiftFlow — shift requests, schedule, schedule editor
 import {
-  html, useState, useEffect, useRef, sb, q, toast, Spinner, ErrorBox, useLoad, isManagerRole, NoAccess, WeekToggle,
+  html, useState, useEffect, useRef, sb, q, toast, Spinner, ErrorBox, useLoad, isManagerRole, NoAccess, WeekToggle, isPaused, LAUNCH_LABEL,
   DAYS, DAY_SHIFTS, SHIFT_LABELS, SHIFT_HOURS, ALL_SLOTS, currentWeekSunday, nextWeekSunday, formatWeekRange,
   dayOfWeekIL, addDaysKey, formatShort, formatDateTime, WEEKDAY_MORNINGS, slotChecker, loadWeekSettings, morningState,
 } from "./lib.js";
@@ -10,9 +10,15 @@ const MANAGER_NAME = "מיכל"; // shown in the "locked" message
 
 // ================= employee: submit availability =================
 export function ShiftRequest({ profile }) {
+  if (isPaused(profile)) return html`<div class="stack"><h2>הגשת משמרות</h2>
+    <div class="empty"><p>⏸️ הגשת המשמרות נפתחת ב${LAUNCH_LABEL}.</p><p class="muted">בינתיים רק נרשמים ומתחברים — המנהל מגדיר את כולם.</p></div></div>`;
+  return html`<${ShiftRequestForm} profile=${profile} />`;
+}
+
+function ShiftRequestForm({ profile }) {
   const weekStart = nextWeekSunday();
   const day = dayOfWeekIL();
-  const open = day !== 5 && day !== 6; // Sunday–Thursday
+  const open = day >= 2 && day <= 4; // submission window: Tuesday–Thursday
   const [avail, setAvail] = useState({});
   const [slotNotes, setSlotNotes] = useState({});
   const [notes, setNotes] = useState("");
@@ -83,10 +89,10 @@ export function ShiftRequest({ profile }) {
     </div>`;
   }
 
-  if (!open && !(existing && !existing.locked)) {
+  if (!open) {
     return html`<div class="empty">
       <p class="huge">🕐</p><p class="big">הגשת משמרות</p>
-      <p class="muted">ניתן להגיש משמרות מיום ראשון עד סוף יום חמישי.</p>
+      <p class="muted">ההגשה פתוחה מיום שלישי עד סוף יום חמישי.</p>
       <p class="muted">השבוע הקרוב: <b>${formatWeekRange(weekStart)}</b></p>
       ${existing && html`<a class="btn" href="#/schedule">לסידור העבודה</a>`}
     </div>`;

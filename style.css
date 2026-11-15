@@ -193,3 +193,4 @@ table.board { width: 100%; border-collapse: collapse; font-size: 14px; }
 .board-row { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line, #eee); }
 .board-row:last-child { border-bottom: 0; }
 .board-row .thumb { flex: none; }
+.launch { margin-bottom: 12px; line-height: 1.5; }

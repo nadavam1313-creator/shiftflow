@@ -1,7 +1,7 @@
 // ShiftFlow — zones, tasks, history
 import {
   html, useState, useMemo, sb, q, toast, Spinner, ErrorBox, useLoad, isManagerRole, CATEGORIES,
-  todayIL, formatTime, PHASES, Modal, NoAccess, safeUrl, shrinkImage,
+  todayIL, formatTime, PHASES, Modal, NoAccess, safeUrl, shrinkImage, isPaused, LAUNCH_LABEL,
 } from "./lib.js";
 
 const MIN_MINUTES_BETWEEN_COMPLETIONS = 30;
@@ -137,12 +137,12 @@ export function ZoneTasks({ profile, zoneId }) {
       : phaseTasks.map((t) => {
           const c = compFor(t.id);
           const lockedByOther = !!c && c.completed_by !== profile.email && !mgr;
-          return html`<${TaskItem} key=${t.id + activePhase} task=${t} completion=${c} lockedByOther=${lockedByOther} onUpdate=${(u) => update(t, u)} />`;
+          return html`<${TaskItem} key=${t.id + activePhase} task=${t} completion=${c} lockedByOther=${lockedByOther} paused=${isPaused(profile)} onUpdate=${(u) => update(t, u)} />`;
         })}
   </div>`;
 }
 
-function TaskItem({ task, completion, lockedByOther, onUpdate }) {
+function TaskItem({ task, completion, lockedByOther, paused, onUpdate }) {
   const [busy, setBusy] = useState(false);
   const [lightbox, setLightbox] = useState(false);
   const status = completion?.status;
@@ -192,7 +192,9 @@ function TaskItem({ task, completion, lockedByOther, onUpdate }) {
         ${task.requires_photo && html`<span class="pill warn">📷 חובה</span>`}
       </div>
     </div>
-    ${lockedByOther
+    ${paused
+      ? html`<p class="small muted" style="margin-top:8px">⏸️ סימון משימות ייפתח ב${LAUNCH_LABEL}</p>`
+      : lockedByOther
       ? html`<p class="small muted" style="margin-top:8px">🔒 סומן ע״י עובד אחר</p>`
       : html`<div class="row gap wrap" style="margin-top:8px">
           ${task.requires_photo
