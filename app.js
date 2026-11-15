@@ -195,7 +195,18 @@ function Pending({ profile, onRefresh }) {
 // ---------- shell ----------
 function Shell({ profile, route }) {
   const mgr = isManagerRole(profile.role);
-  const items = NAV.filter((n) => (n.manager ? mgr : n.employeeOnly ? !mgr : true));
+  // phones: 5 buttons ("ניהול" opens a hub); wide screens: every page has its own button
+  const [wide, setWide] = useState(() => matchMedia("(min-width: 900px)").matches);
+  useEffect(() => {
+    const mq = matchMedia("(min-width: 900px)");
+    const on = () => setWide(mq.matches);
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  const items = wide && mgr
+    ? [...NAV.filter((n) => !n.manager && !n.employeeOnly), { path: "/history", label: "היסטוריה", icon: "🕘" },
+       ...HUB.filter((h) => h.path !== "/history").map((h) => ({ ...h, path: h.path }))]
+    : NAV.filter((n) => (n.manager ? mgr : n.employeeOnly ? !mgr : true));
   const active = (n) => n.path === "/"
     ? ["/", ""].includes(route) || route.startsWith("/category") || route.startsWith("/zone")
     : route.startsWith(n.path) || (n.also || []).some((a) => route.startsWith(a));

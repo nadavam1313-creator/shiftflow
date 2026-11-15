@@ -6,36 +6,32 @@ import {
 } from "./lib.js";
 
 // ================= leaderboard =================
+// Employees see only their own place and points; managers see the full table;
+// only admins see and edit the prize amounts (enforced in the database too).
 export function Leaderboard({ profile }) {
   const mgr = isManagerRole(profile.role);
+  const admin = profile.role === "admin";
   const [month, setMonth] = useState(currentMonthIL());
   const { loading, error, data, reload, setData } = useLoad(async () => {
-    const { start, end } = monthRange(month);
-    const [comps, tasks, bonus, people] = await Promise.all([
-      q(sb.from("task_completions").select("task_id,completed_by").eq("status", "done").gte("shift_date", start).lte("shift_date", end)),
-      q(sb.from("tasks").select("id,points")),
-      q(sb.from("bonus_settings").select("*").eq("month", month).maybeSingle()),
-      q(sb.from("profiles").select("email,full_name")),
+    const [board, bonus] = await Promise.all([
+      q(sb.rpc("leaderboard", { p_month: month })),
+      admin ? q(sb.from("bonus_settings").select("*").eq("month", month).maybeSingle()) : Promise.resolve(null),
     ]);
-    return { comps, tasks, bonus, people };
+    return { board, bonus };
   }, [month]);
-
-  const board = useMemo(() => {
-    if (!data) return [];
-    const pts = Object.fromEntries(data.tasks.map((t) => [t.id, t.points ?? 1]));
-    const names = Object.fromEntries(data.people.map((p) => [p.email, p.full_name]));
-    const score = {};
-    for (const c of data.comps) {
-      if (!c.completed_by) continue;
-      score[c.completed_by] = (score[c.completed_by] || 0) + (pts[c.task_id] ?? 1);
-    }
-    return Object.entries(score).map(([email, points]) => ({ email, name: names[email] || email, points }))
-      .sort((a, b) => b.points - a.points);
-  }, [data]);
 
   const b = data?.bonus?.data || {};
   const first = b.first_prize ?? 400;
   const second = b.second_prize ?? 200;
+  const board = data?.board || [];
+  const mine = board.find((e) => e.email === profile.email);
+
+  const row = (e) => html`<div class=${"list-item " + (Number(e.rank) === 1 ? "gold" : "")}>
+    <span class="rank">${["🥇", "🥈", "🥉"][Number(e.rank) - 1] || "#" + e.rank}</span>
+    <div class="grow"><b>${e.name}</b>${e.email === profile.email && html` <span class="pill">את/ה</span>`}</div>
+    <div class="center-text"><b class="big">${e.points}</b><p class="small muted">נקודות</p></div>
+    ${admin && Number(e.rank) <= 2 && html`<span class="pill gold">₪${Number(e.rank) === 1 ? first : second}</span>`}
+  </div>`;
 
   return html`<div class="stack">
     <div class="row between wrap gap">
@@ -44,19 +40,21 @@ export function Leaderboard({ profile }) {
         ${recentMonthsIL(6).map((m) => html`<option value=${m}>${formatMonth(m)}</option>`)}
       </select>
     </div>
-    <div class="note gold">
-      <b>🥇 מקום ראשון | 🥈 מקום שני</b>
-      <p class="small">${mgr ? `מקום ראשון: ₪${first} • מקום שני: ₪${second}` : b.message || "בסוף החודש הזוכים יקבלו פרס — תתחרו! 🎉"}</p>
-    </div>
+    ${admin
+      ? html`<div class="note gold"><b>🥇 מקום ראשון: ₪${first} • 🥈 מקום שני: ₪${second}</b><p class="small">רק אתה רואה את הסכומים</p></div>`
+      : html`<div class="note gold"><b>🥇 בסוף החודש המקומות הראשונים זוכים בפרס — תתחרו! 🎉</b></div>`}
     ${loading ? html`<${Spinner} />` : error ? html`<${ErrorBox} error=${error} retry=${reload} />`
-      : board.length === 0 ? html`<div class="empty"><p>אין נתונים לחודש זה עדיין</p></div>`
-      : board.map((e, i) => html`<div class=${"list-item " + (i === 0 ? "gold" : "")}>
-          <span class="rank">${["🥇", "🥈", "🥉"][i] || "#" + (i + 1)}</span>
-          <div class="grow"><b>${e.name}</b>${e.email === profile.email && html` <span class="pill">את/ה</span>`}</div>
-          <div class="center-text"><b class="big">${e.points}</b><p class="small muted">נקודות</p></div>
-          ${mgr && i < 2 && html`<span class="pill gold">₪${i === 0 ? first : second}</span>`}
-        </div>`)}
-    ${mgr && !loading && !error && html`<${BonusPanel} month=${month} bonus=${data.bonus} onSaved=${(row) => setData((d) => ({ ...d, bonus: row }))} />`}
+      : !mgr
+        ? (mine
+            ? html`<div class="card center-text">
+                <p class="muted">המקום שלך החודש</p>
+                <p class="huge">${["🥇", "🥈", "🥉"][Number(mine.rank) - 1] || "#" + mine.rank}</p>
+                <p class="big">מקום ${mine.rank} · ${mine.points} נקודות</p>
+              </div>`
+            : html`<div class="empty"><p>עוד אין לך נקודות החודש — כל משימה שמסמנים מוסיפה נקודות 💪</p></div>`)
+        : board.length === 0 ? html`<div class="empty"><p>אין נתונים לחודש זה עדיין</p></div>`
+        : board.map(row)}
+    ${admin && !loading && !error && html`<${BonusPanel} month=${month} bonus=${data.bonus} onSaved=${(r) => setData((d) => ({ ...d, bonus: r }))} />`}
   </div>`;
 }
 
@@ -78,12 +76,11 @@ function BonusPanel({ month, bonus, onSaved }) {
     } catch (e) { toast("השמירה נכשלה: " + e.message, "bad"); } finally { setBusy(false); }
   };
   return html`<div class="card">
-    <h3>⚙️ הגדרות בונוס — ${formatMonth(month)}</h3>
+    <h3>⚙️ הגדרות פרסים — ${formatMonth(month)}</h3><p class="small muted">גלוי ונערך רק על ידך</p>
     <div class="row gap wrap">
       <label>פרס ראשון (₪)<input type="number" inputmode="numeric" value=${first} onInput=${(e) => setFirst(e.target.value)} /></label>
       <label>פרס שני (₪)<input type="number" inputmode="numeric" value=${second} onInput=${(e) => setSecond(e.target.value)} /></label>
     </div>
-    <label>הודעה לעובדים<input value=${message} onInput=${(e) => setMessage(e.target.value)} placeholder="בסוף החודש הזוכים יקבלו פרס — תתחרו! 🎉" /></label>
     <button class="btn primary" disabled=${busy} onClick=${save}>שמור</button>
   </div>`;
 }
