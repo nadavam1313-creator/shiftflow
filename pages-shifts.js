@@ -2,7 +2,7 @@
 import {
   html, useState, useEffect, useRef, sb, q, toast, Spinner, ErrorBox, useLoad, isManagerRole, NoAccess, WeekToggle,
   DAYS, DAY_SHIFTS, SHIFT_LABELS, SHIFT_HOURS, ALL_SLOTS, currentWeekSunday, nextWeekSunday, formatWeekRange,
-  dayOfWeekIL, addDaysKey, formatShort, formatDateTime, WEEKDAY_MORNINGS, slotOpen, loadOpenSlots,
+  dayOfWeekIL, addDaysKey, formatShort, formatDateTime, WEEKDAY_MORNINGS, slotChecker, loadWeekSettings, morningState,
 } from "./lib.js";
 
 const MIN_SHIFTS = 3;
@@ -20,16 +20,18 @@ export function ShiftRequest({ profile }) {
   const [busy, setBusy] = useState(false);
   const [justSubmitted, setJustSubmitted] = useState(false);
 
-  const [openSlots, setOpenSlots] = useState([]);
+  const [settings, setSettings] = useState({ open_slots: [], closed_slots: [] });
   const { loading, error, data: existing, reload, setData } = useLoad(async () => {
-    const [row, opened] = await Promise.all([
+    const [row, ws] = await Promise.all([
       q(sb.from("shift_submissions").select("*").eq("employee_email", profile.email).eq("week_start", weekStart).maybeSingle()),
-      loadOpenSlots(weekStart),
+      loadWeekSettings(weekStart),
     ]);
-    setOpenSlots(opened);
+    setSettings(ws);
     return row;
   }, [weekStart]);
-  const isOpen = (key) => slotOpen(key, openSlots);
+  const isOpen = slotChecker(weekStart, settings);
+  const openMornings = WEEKDAY_MORNINGS.map((k) => ({ k, st: morningState(weekStart, k, settings) })).filter((x) => x.st.open);
+  const holidayNames = [...new Set(openMornings.map((x) => x.st.auto).filter(Boolean))];
 
   useEffect(() => {
     if (existing) {
@@ -100,7 +102,7 @@ export function ShiftRequest({ profile }) {
     </div>`}
     ${existing && !locked && html`<div class="note ok">✓ המנהלת פתחה לך את ההגשה לעריכה — אפשר לעדכן</div>`}
 
-    ${openSlots.length > 0 && html`<div class="note ok">☀️ השבוע נפתחו גם משמרות בוקר (חג / חופש)</div>`}
+    ${openMornings.length > 0 && html`<div class="note ok">☀️ השבוע אפשר להגיש גם משמרות בוקר${holidayNames.length ? ` (${holidayNames.join(", ")})` : ""}</div>`}
     ${DAYS.map((d, i) => {
       const shifts = DAY_SHIFTS[d.key].filter((s) => isOpen(`${d.key}_${s}`));
       if (!shifts.length) return null;
@@ -181,16 +183,16 @@ export function PublishedSchedule({ profile }) {
 export function ShiftManager({ profile }) {
   const [week, setWeek] = useState(nextWeekSunday());
   const [open, setOpen] = useState({});
-  const [openSlots, setOpenSlots] = useState([]);
+  const [settings, setSettings] = useState({ open_slots: [], closed_slots: [] });
   const { loading, error, data: subs, reload, setData } = useLoad(async () => {
-    const [rows, opened] = await Promise.all([
+    const [rows, ws] = await Promise.all([
       q(sb.from("shift_submissions").select("*").eq("week_start", week).order("employee_name")),
-      loadOpenSlots(week),
+      loadWeekSettings(week),
     ]);
-    setOpenSlots(opened);
+    setSettings(ws);
     return rows;
   }, [week]);
-  const isOpen = (key) => slotOpen(key, openSlots);
+  const isOpen = slotChecker(week, settings);
 
   if (!isManagerRole(profile.role)) return html`<${NoAccess} />`;
 
@@ -210,7 +212,7 @@ export function ShiftManager({ profile }) {
       <div><h2>בקשות משמרות</h2>${subs && html`<p class="muted small">${subs.length} עובדים הגישו</p>`}</div>
       <${WeekToggle} value=${week} onChange=${setWeek} />
     </div>
-    ${!loading && !error && html`<${MorningsPanel} week=${week} openSlots=${openSlots} onChange=${setOpenSlots} />`}
+    ${!loading && !error && html`<${MorningsPanel} week=${week} settings=${settings} onChange=${setSettings} />`}
     ${loading ? html`<${Spinner} />` : error ? html`<${ErrorBox} error=${error} retry=${reload} />`
       : subs.length === 0 ? html`<div class="empty"><p>עדיין אף עובד לא הגיש משמרות לשבוע זה</p></div>`
       : html`
@@ -250,15 +252,22 @@ export function ShiftManager({ profile }) {
 }
 
 // manager: open weekday mornings for employee requests in a specific week
-function MorningsPanel({ week, openSlots, onChange }) {
+function MorningsPanel({ week, settings, onChange }) {
   const [busy, setBusy] = useState(false);
   const toggle = async (key) => {
-    const next = openSlots.includes(key) ? openSlots.filter((k) => k !== key) : [...openSlots, key];
+    const st = morningState(week, key, settings);
+    const without = (arr) => arr.filter((k) => k !== key);
+    // flip the current state; a manual choice that matches the automatic one is simply removed
+    let open_slots = without(settings.open_slots), closed_slots = without(settings.closed_slots);
+    const wantOpen = !st.open;
+    if (wantOpen && !st.auto) open_slots = [...open_slots, key];
+    if (!wantOpen && st.auto) closed_slots = [...closed_slots, key];
+    const next = { open_slots, closed_slots };
     setBusy(true);
     try {
-      await q(sb.from("week_settings").upsert({ week_start: week, open_slots: next, updated_at: new Date().toISOString() }, { onConflict: "week_start" }));
+      await q(sb.from("week_settings").upsert({ week_start: week, ...next, updated_at: new Date().toISOString() }, { onConflict: "week_start" }));
       onChange(next);
-      toast(next.includes(key) ? "משמרת הבוקר נפתחה להגשה" : "משמרת הבוקר נסגרה להגשה");
+      toast(wantOpen ? "משמרת הבוקר נפתחה להגשה" : "משמרת הבוקר נסגרה להגשה");
     } catch (e) {
       toast("השמירה נכשלה: " + e.message, "bad");
     } finally {
@@ -267,12 +276,14 @@ function MorningsPanel({ week, openSlots, onChange }) {
   };
   return html`<div class="card">
     <b>☀️ משמרות בוקר (ראשון–חמישי)</b>
-    <p class="small muted">בדרך כלל סגורות להגשה. לחג או לחופש — פתחו כאן את הימים, והעובדים יוכלו להגיש גם בוקר. בכל מקרה אפשר לשבץ בוקר ידנית ב"עריכת סידור".</p>
+    <p class="small muted">נפתחות להגשה אוטומטית בחגים ובחופשות (לפי הלוח העברי ולוח החופשות של משרד החינוך, כולל חנוכה וחופש גדול). בשאר הימים הן סגורות. לחיצה על יום פותחת או סוגרת אותו ידנית לשבוע הזה. בכל מקרה אפשר לשבץ בוקר ידנית ב"עריכת סידור".</p>
     <div class="chips mt">${WEEKDAY_MORNINGS.map((key) => {
       const day = DAYS.find((d) => key.startsWith(d.key));
-      const on = openSlots.includes(key);
-      return html`<button class=${"chip " + (on ? "sel" : "")} disabled=${busy} onClick=${() => toggle(key)}>${on ? "✓ " : ""}${day.label}</button>`;
+      const st = morningState(week, key, settings);
+      return html`<button class=${"chip " + (st.open ? "sel" : "")} disabled=${busy} onClick=${() => toggle(key)}
+        title=${st.auto || ""}>${st.open ? "✓ " : ""}${day.label}${st.auto ? ` · ${st.auto}` : ""}${st.manual ? " ✋" : ""}</button>`;
     })}</div>
+    <p class="small muted mt">✓ = פתוח להגשה · ✋ = נקבע ידנית</p>
   </div>`;
 }
 
@@ -287,13 +298,13 @@ export function ScheduleEditor({ profile }) {
   const inputRef = useRef(null);
 
   const { loading, error, data, reload, setData } = useLoad(async () => {
-    const [subs, pub, people, openSlots] = await Promise.all([
+    const [subs, pub, people, settings] = await Promise.all([
       q(sb.from("shift_submissions").select("*").eq("week_start", week)),
       q(sb.from("published_schedules").select("*").eq("week_start", week).maybeSingle()),
       q(sb.from("profiles").select("full_name,email,role").neq("role", "pending").order("full_name")),
-      loadOpenSlots(week),
+      loadWeekSettings(week),
     ]);
-    return { subs, pub, people, openSlots };
+    return { subs, pub, people, settings };
   }, [week]);
 
   useEffect(() => {
@@ -381,7 +392,8 @@ export function ScheduleEditor({ profile }) {
         const avail = subs.filter((x) => x.availability?.[key] && !selected.includes(keyOf(x)));
         return html`<div class="slot-block">
           <p class="small muted">${SHIFT_LABELS[s]} · ${selected.length} משובצים
-            ${!slotOpen(key, data.openSlots) && html`<span class="pill">סגור להגשה — שיבוץ ידני</span>`}</p>
+            ${!slotChecker(week, data.settings)(key) && html`<span class="pill">סגור להגשה — שיבוץ ידני</span>`}
+            ${WEEKDAY_MORNINGS.includes(key) && morningState(week, key, data.settings).auto && html`<span class="pill ok">${morningState(week, key, data.settings).auto}</span>`}</p>
           ${selected.length > 0 && html`<div class="chips">${selected.map((n) => html`<span class="chip sel">✓ ${label(n)}<button onClick=${() => remove(key, n)}>✕</button></span>`)}</div>`}
           ${avail.map((x) => {
             const c = clash(d.key, s, keyOf(x));

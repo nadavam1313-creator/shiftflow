@@ -99,14 +99,56 @@ export const DAY_SHIFTS = {
 export const SHIFT_LABELS = { morning: "בוקר", evening: "ערב", night: 'מוצ"ש' };
 export const SHIFT_HOURS = { morning: "10:00-16:00", evening: "16:00+", night: "20 דק׳ אחרי צאת שבת - 00:00" };
 export const ALL_SLOTS = DAYS.flatMap((d) => DAY_SHIFTS[d.key].map((s) => ({ day: d, shift: s, key: `${d.key}_${s}` })));
-// Sun–Thu mornings are closed for employee requests by default;
-// a manager can open them for a specific week (holidays / school vacations).
-export const WEEKDAY_MORNINGS = ["sunday", "monday", "tuesday", "wednesday", "thursday"].map((d) => `${d}_morning`);
-export const slotOpen = (key, openSlots = []) => !WEEKDAY_MORNINGS.includes(key) || openSlots.includes(key);
-export async function loadOpenSlots(week) {
-  const { data } = await sb.from("week_settings").select("open_slots").eq("week_start", week).maybeSingle();
-  return data?.open_slots || [];
+// ---------- Hebrew calendar: holidays & school vacations (Israel) ----------
+const hebFmt = new Intl.DateTimeFormat("en-u-ca-hebrew", { day: "numeric", month: "long", timeZone: "UTC" });
+function hebrewOf(key) {
+  const [y, m, d] = key.split("-").map(Number);
+  const parts = hebFmt.formatToParts(new Date(Date.UTC(y, m - 1, d, 12)));
+  return { month: parts.find((p) => p.type === "month").value, day: Number(parts.find((p) => p.type === "day").value) };
 }
+// Returns the holiday / school-vacation name for a date ("YYYY-MM-DD"), or null.
+// Rules follow the Israeli Ministry of Education calendar (checked against תשפ"ז 2026-27).
+export function holidayFor(key) {
+  const month = Number(key.slice(5, 7));
+  if (month === 7 || month === 8) return "חופש גדול";
+  const { month: hm, day } = hebrewOf(key);
+  if ((hm === "Elul" && day === 29) || (hm === "Tishri" && day <= 2)) return "ראש השנה";
+  if (hm === "Tishri" && day >= 9 && day <= 10) return "יום כיפור";
+  if (hm === "Tishri" && day >= 11 && day <= 22) return "חופשת סוכות";
+  for (let back = 0; back <= 7; back++) {           // 8 days of Hanukkah from 25 Kislev
+    const h = hebrewOf(addDaysKey(key, -back));
+    if (h.month === "Kislev" && h.day === 25) return "חנוכה";
+  }
+  if ((hm === "Adar" || hm === "Adar II") && (day === 14 || day === 15)) return "פורים";
+  if (hm === "Nisan" && day >= 6 && day <= 21) return "חופשת פסח";
+  if (hm === "Iyar") {
+    const dow5 = (parseKey(key).getDay() + (5 - day) + 70) % 7; // weekday of 5 Iyar
+    const atzmaut = dow5 === 5 ? 4 : dow5 === 6 ? 3 : dow5 === 1 ? 6 : 5; // moved when 5 Iyar is Fri/Sat/Mon
+    if (day === atzmaut) return "יום העצמאות";
+    if (day === 18) return 'ל"ג בעומר';
+  }
+  if (hm === "Sivan" && day >= 5 && day <= 7) return "שבועות";
+  return null;
+}
+
+// Sun–Thu mornings are closed for employee requests, except on holidays / school vacations
+// (opened automatically). A manager can still open or close a specific morning per week.
+export const WEEKDAY_MORNINGS = ["sunday", "monday", "tuesday", "wednesday", "thursday"].map((d) => `${d}_morning`);
+const DAY_INDEX = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 };
+export const dateOfSlot = (week, key) => addDaysKey(week, DAY_INDEX[key.split("_")[0]]);
+export async function loadWeekSettings(week) {
+  const { data } = await sb.from("week_settings").select("open_slots,closed_slots").eq("week_start", week).maybeSingle();
+  return { open_slots: data?.open_slots || [], closed_slots: data?.closed_slots || [] };
+}
+// state of a weekday morning: { open, auto (holiday name or null), manual: "open" | "closed" | null }
+export function morningState(week, key, settings) {
+  const auto = holidayFor(dateOfSlot(week, key));
+  if (settings.closed_slots.includes(key)) return { open: false, auto, manual: "closed" };
+  if (settings.open_slots.includes(key)) return { open: true, auto, manual: "open" };
+  return { open: !!auto, auto, manual: null };
+}
+export const slotChecker = (week, settings) => (key) =>
+  !WEEKDAY_MORNINGS.includes(key) || morningState(week, key, settings).open;
 
 export const PHASES = ["פתיחת משמרת", "במהלך משמרת", "סוף משמרת"];
 
