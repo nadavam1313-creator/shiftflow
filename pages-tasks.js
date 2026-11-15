@@ -1,7 +1,7 @@
 // ShiftFlow — zones, tasks, history
 import {
   html, useState, useMemo, sb, q, toast, Spinner, ErrorBox, useLoad, isManagerRole, CATEGORIES,
-  todayIL, formatTime, PHASES, Modal,
+  todayIL, formatTime, PHASES, Modal, NoAccess, safeUrl, shrinkImage,
 } from "./lib.js";
 
 const MIN_MINUTES_BETWEEN_COMPLETIONS = 30;
@@ -81,11 +81,15 @@ export function ZoneTasks({ profile, zoneId }) {
   if (loading) return html`<${Spinner} />`;
   if (error) return html`<${ErrorBox} error=${error} retry=${reload} />`;
   if (!data.zone) return html`<div class="empty"><p>אזור לא נמצא</p></div>`;
+  const mgr = isManagerRole(profile.role);
+  if (!mgr && !(profile.allowed_zones || []).includes(zoneId)) return html`<${NoAccess} />`;
 
   const { zone, tasks, comps } = data;
-  const compFor = (taskId) => comps.find((c) => c.task_id === taskId);
-  const doneCount = tasks.filter((t) => compFor(t.id)?.status === "done").length;
   const activePhase = phase || PHASES.find((p) => tasks.some((t) => t.shift_phases.includes(p))) || PHASES[0];
+  // one completion per task per day per shift phase
+  const compFor = (taskId) => comps.find((c) => c.task_id === taskId && c.shift_phase === activePhase);
+  const doneIds = new Set(comps.filter((c) => c.status === "done").map((c) => c.task_id));
+  const doneCount = tasks.filter((t) => doneIds.has(t.id)).length;
   const phaseTasks = tasks.filter((t) => t.shift_phases.includes(activePhase));
 
   const update = async (task, updates) => {
@@ -97,7 +101,11 @@ export function ZoneTasks({ profile, zoneId }) {
         return false;
       }
     }
-    const row = { ...updates, completed_by: profile.email, updated_at: new Date().toISOString() };
+    if (existing && existing.completed_by !== profile.email && !mgr) {
+      toast("המשימה כבר סומנה ע״י עובד אחר", "bad");
+      return false;
+    }
+    const row = { ...updates, updated_at: new Date().toISOString() };
     try {
       let saved;
       if (existing) {
@@ -105,13 +113,13 @@ export function ZoneTasks({ profile, zoneId }) {
       } else {
         saved = await q(sb.from("task_completions").insert({
           task_id: task.id, zone_id: zone.id, shift_date: today,
-          shift_phase: task.shift_phases[0] || activePhase, ...row,
+          shift_phase: activePhase, completed_by: profile.email, ...row,
         }).select().single());
       }
       setData((d) => ({ ...d, comps: [...d.comps.filter((c) => c.id !== saved.id), saved] }));
       return true;
     } catch (e) {
-      toast("השמירה נכשלה: " + e.message, "bad");
+      toast(e.code === "23505" ? "מישהו אחר כבר סימן את המשימה הזאת — רעננו את הדף" : "השמירה נכשלה: " + e.message, "bad");
       return false;
     }
   };
@@ -125,14 +133,20 @@ export function ZoneTasks({ profile, zoneId }) {
     <div class="tabs">${PHASES.map((p) => html`<button class=${p === activePhase ? "on" : ""} onClick=${() => setPhase(p)}>${p}</button>`)}</div>
     ${phaseTasks.length === 0
       ? html`<div class="empty"><p>אין משימות לשלב זה</p></div>`
-      : phaseTasks.map((t) => html`<${TaskItem} key=${t.id} task=${t} completion=${compFor(t.id)} onUpdate=${(u) => update(t, u)} />`)}
+      : phaseTasks.map((t) => {
+          const c = compFor(t.id);
+          const lockedByOther = !!c && c.completed_by !== profile.email && !mgr;
+          return html`<${TaskItem} key=${t.id + activePhase} task=${t} completion=${c} lockedByOther=${lockedByOther} onUpdate=${(u) => update(t, u)} />`;
+        })}
   </div>`;
 }
 
-function TaskItem({ task, completion, onUpdate }) {
+function TaskItem({ task, completion, lockedByOther, onUpdate }) {
   const [busy, setBusy] = useState(false);
   const [showPhoto, setShowPhoto] = useState(false);
+  const [lightbox, setLightbox] = useState(false);
   const status = completion?.status;
+  const photo = safeUrl(completion?.photo_url);
 
   const mark = async (newStatus, extra = {}) => {
     setBusy(true);
@@ -140,13 +154,17 @@ function TaskItem({ task, completion, onUpdate }) {
     setBusy(false);
   };
 
-  const uploadPhoto = async (file) => {
+  const uploadPhoto = async (input) => {
+    const file = input.files && input.files[0];
+    input.value = ""; // allow picking the same file again
     if (!file) return;
     setBusy(true);
     try {
-      const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+      const small = await shrinkImage(file);
+      const isJpeg = small !== file || /jpe?g$/i.test(file.name);
+      const ext = isJpeg ? "jpg" : (file.name.split(".").pop() || "jpg").toLowerCase();
       const path = `${todayIL()}/${task.id}-${Date.now()}.${ext}`;
-      const { error } = await sb.storage.from("task-photos").upload(path, file, { contentType: file.type });
+      const { error } = await sb.storage.from("task-photos").upload(path, small, { contentType: isJpeg ? "image/jpeg" : file.type });
       if (error) throw error;
       const url = sb.storage.from("task-photos").getPublicUrl(path).data.publicUrl;
       await onUpdate({ status: "done", photo_url: url });
@@ -167,15 +185,20 @@ function TaskItem({ task, completion, onUpdate }) {
       </div>
       <span class="pill">${task.points} נק׳</span>
     </div>
-    <div class="row gap wrap" style="margin-top:8px">
-      <button class="btn sm ok" disabled=${busy} onClick=${() => (task.requires_photo && !completion?.photo_url ? setShowPhoto(true) : mark("done"))}>✓ בוצע</button>
-      <button class="btn sm" disabled=${busy} onClick=${() => mark("not_done")}>✗ לא בוצע</button>
-      <label class="btn sm">📷 תמונה<input type="file" accept="image/*" capture="environment" hidden onChange=${(e) => uploadPhoto(e.target.files[0])} /></label>
-      ${completion?.photo_url && html`<a href=${completion.photo_url} target="_blank"><img class="thumb" src=${completion.photo_url} /></a>`}
-    </div>
+    ${lockedByOther
+      ? html`<p class="small muted" style="margin-top:8px">🔒 סומן ע״י עובד אחר</p>`
+      : html`<div class="row gap wrap" style="margin-top:8px">
+          <button class="btn sm ok" disabled=${busy} onClick=${() => (task.requires_photo && !photo ? setShowPhoto(true) : mark("done"))}>✓ בוצע</button>
+          <button class="btn sm" disabled=${busy} onClick=${() => mark("not_done")}>✗ לא בוצע</button>
+          <label class=${"btn sm" + (busy ? " busy" : "")}>${busy ? "מעלה…" : "📷 תמונה"}<input type="file" accept="image/*" hidden onChange=${(e) => uploadPhoto(e.target)} /></label>
+          ${photo && html`<img class="thumb" src=${photo} onClick=${() => setLightbox(true)} />`}
+        </div>`}
+    ${lockedByOther && photo && html`<img class="thumb mt" src=${photo} onClick=${() => setLightbox(true)} />`}
+    ${lightbox && html`<div class="lightbox" onClick=${() => setLightbox(false)}><img src=${photo} /></div>`}
     ${showPhoto && html`<${Modal} title="נדרשת תמונה" onClose=${() => setShowPhoto(false)}>
-      <p>במשימה הזאת צריך לצלם תמונה כדי לסמן שבוצעה.</p>
-      <label class="btn primary wide">📷 צלם / בחר תמונה<input type="file" accept="image/*" capture="environment" hidden onChange=${(e) => { setShowPhoto(false); uploadPhoto(e.target.files[0]); }} /></label>
+      <p>במשימה הזאת צריך תמונה כדי לסמן שבוצעה.</p>
+      <label class="btn primary wide">📷 צלם תמונה<input type="file" accept="image/*" capture="environment" hidden onChange=${(e) => { setShowPhoto(false); uploadPhoto(e.target); }} /></label>
+      <label class="btn wide mt">🖼️ בחר מהגלריה<input type="file" accept="image/*" hidden onChange=${(e) => { setShowPhoto(false); uploadPhoto(e.target); }} /></label>
     <//>`}
   </div>`;
 }
@@ -211,7 +234,7 @@ export function History({ profile }) {
             <b class="small">${names.t[c.task_id] || "משימה שנמחקה"}</b>
             <p class="small muted">${names.z[c.zone_id] || ""} • ${c.shift_phase || ""} • ${c.completed_by || ""} • ${formatTime(c.updated_at)}</p>
           </div>
-          ${c.photo_url && html`<img class="thumb" src=${c.photo_url} onClick=${() => setLightbox(c.photo_url)} />`}
+          ${safeUrl(c.photo_url) && html`<img class="thumb" src=${safeUrl(c.photo_url)} onClick=${() => setLightbox(safeUrl(c.photo_url))} />`}
         </div>`)}
     ${lightbox && html`<div class="lightbox" onClick=${() => setLightbox(null)}><img src=${lightbox} /></div>`}
   </div>`;

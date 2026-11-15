@@ -145,12 +145,36 @@ export function WeekToggle({ value, onChange }) {
 }
 
 export function Modal({ title, children, onClose }) {
-  return html`<div class="modal-bg" onClick=${(e) => e.target === e.currentTarget && onClose()}>
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+  return html`<div class="modal-bg">
     <div class="modal">
       <div class="row between"><h3>${title}</h3><button class="icon-btn" onClick=${onClose}>✕</button></div>
       ${children}
     </div>
   </div>`;
+}
+
+// only allow http(s) links (photo URLs come from the database)
+export const safeUrl = (u) => (typeof u === "string" && /^https:\/\//.test(u) ? u : null);
+
+// shrink a phone photo before upload (max 1600px, JPEG)
+export async function shrinkImage(file, max = 1600) {
+  try {
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * scale);
+    c.height = Math.round(bmp.height * scale);
+    c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+    const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.82));
+    return blob || file;
+  } catch {
+    return file; // e.g. HEIC on browsers that can't decode it
+  }
 }
 
 export function NoAccess() {

@@ -132,14 +132,20 @@ export function ShiftRequest({ profile }) {
 
 // ================= everyone: published schedule =================
 export function PublishedSchedule({ profile }) {
-  const [week, setWeek] = useState(dayOfWeekIL() >= 5 ? nextWeekSunday() : currentWeekSunday());
+  const [week, setWeek] = useState(currentWeekSunday());
+  const [names, setNames] = useState({});
+  useEffect(() => {
+    sb.from("profiles").select("email,full_name").then(({ data }) => data && setNames(Object.fromEntries(data.map((p) => [p.email, p.full_name || p.email]))));
+  }, []);
   const { loading, error, data, reload } = useLoad(async () => {
     const row = await q(sb.from("published_schedules").select("*").eq("week_start", week).eq("is_published", true).maybeSingle());
     return row?.schedule || null;
   }, [week]);
 
-  const me = profile.full_name || profile.email;
-  const myCount = data ? ALL_SLOTS.filter((s) => (data[s.key] || []).includes(me)).length : 0;
+  // schedule entries are emails (or free-text names for people without an account)
+  const isMe = (n) => n === profile.email || n === profile.full_name;
+  const label = (n) => names[n] || n;
+  const myCount = data ? ALL_SLOTS.filter((s) => (data[s.key] || []).some(isMe)).length : 0;
 
   return html`<div class="stack">
     <div class="row between wrap gap"><h2>סידור עבודה</h2><${WeekToggle} value=${week} onChange=${setWeek} /></div>
@@ -154,7 +160,7 @@ export function PublishedSchedule({ profile }) {
             <b>${d.label} <span class="muted small">${formatShort(addDaysKey(week, i))}</span></b>
             ${shifts.map((s) => html`<div class="mt">
               <p class="small muted">${SHIFT_LABELS[s]}</p>
-              <div class="chips">${data[`${d.key}_${s}`].map((n) => html`<span class=${"chip " + (n === me ? "me" : "")}>${n}</span>`)}</div>
+              <div class="chips">${data[`${d.key}_${s}`].map((n) => html`<span class=${"chip " + (isMe(n) ? "me" : "")}>${label(n)}</span>`)}</div>
             </div>`)}
           </div>`;
         })}`}
@@ -172,7 +178,8 @@ export function ShiftManager({ profile }) {
 
   const unlock = async (s) => {
     try {
-      await q(sb.from("shift_submissions").update({ locked: false }).eq("id", s.id));
+      const rows = await q(sb.from("shift_submissions").update({ locked: false }).eq("id", s.id).select());
+      if (!rows.length) throw new Error("אין הרשאה");
       setData((list) => list.map((x) => (x.id === s.id ? { ...x, locked: false } : x)));
       toast(`ההגשה של ${s.employee_name} נפתחה לעריכה`);
     } catch (e) {
@@ -245,6 +252,13 @@ export function ScheduleEditor({ profile }) {
   useEffect(() => {
     if (data) { setSchedule(data.pub?.schedule || {}); setDirty(false); }
   }, [data]);
+  // warn before leaving with unsaved changes
+  useEffect(() => {
+    window.__sfDirty = dirty;
+    const onUnload = (e) => { if (dirty) { e.preventDefault(); e.returnValue = ""; } };
+    addEventListener("beforeunload", onUnload);
+    return () => { removeEventListener("beforeunload", onUnload); window.__sfDirty = false; };
+  }, [dirty]);
   useEffect(() => { adding && setTimeout(() => inputRef.current?.focus(), 30); }, [adding]);
 
   if (!isManagerRole(profile.role)) return html`<${NoAccess} />`;
@@ -258,9 +272,10 @@ export function ScheduleEditor({ profile }) {
   const add = (key, name) => updateSlot(key, (cur) => (cur.includes(name) ? cur : [...cur, name]));
   const remove = (key, name) => updateSlot(key, (cur) => cur.filter((n) => n !== name));
 
+  // publish: true = publish, false = unpublish (back to draft), undefined = keep current state
   const persist = async (publish) => {
     setSaving(true);
-    const isPub = publish || !!data.pub?.is_published;
+    const isPub = publish === undefined ? !!data.pub?.is_published : publish;
     const row = {
       week_start: week, schedule, is_published: isPub,
       published_at: publish ? new Date().toISOString() : data.pub?.published_at || null,
@@ -270,7 +285,7 @@ export function ScheduleEditor({ profile }) {
       const saved = await q(sb.from("published_schedules").upsert(row, { onConflict: "week_start" }).select().single());
       setData((d) => ({ ...d, pub: saved }));
       setDirty(false);
-      toast(publish ? "🎉 הסידור פורסם לכל העובדים!" : "✅ הסידור נשמר");
+      toast(publish === true ? "🎉 הסידור פורסם לכל העובדים!" : publish === false ? "הסידור הוסתר מהעובדים (טיוטה)" : "✅ הסידור נשמר");
     } catch (e) {
       toast("השמירה נכשלה: " + e.message, "bad");
     } finally {
@@ -282,10 +297,18 @@ export function ScheduleEditor({ profile }) {
   if (error) return html`<${ErrorBox} error=${error} retry=${reload} />`;
   const { subs, pub, people } = data;
   const isPub = !!pub?.is_published;
-  const nameOf = (s) => s.employee_name || s.employee_email;
-  const clash = (dayKey, shift, name) =>
-    DAY_SHIFTS[dayKey].filter((x) => x !== shift && (schedule[`${dayKey}_${x}`] || []).includes(name));
-  const countFor = (name) => ALL_SLOTS.filter((s) => (schedule[s.key] || []).includes(name)).length;
+  const byEmail = Object.fromEntries(people.map((p) => [p.email, p.full_name || p.email]));
+  const byName = Object.fromEntries(people.map((p) => [(p.full_name || "").trim(), p.email]));
+  const label = (e) => byEmail[e] || e;
+  const keyOf = (s) => s.employee_email; // schedule stores emails
+  const clash = (dayKey, shift, who) =>
+    DAY_SHIFTS[dayKey].filter((x) => x !== shift && (schedule[`${dayKey}_${x}`] || []).includes(who));
+  const countFor = (who) => ALL_SLOTS.filter((s) => (schedule[s.key] || []).includes(who)).length;
+  const addManual = (key) => {
+    const typed = manual.trim();
+    if (typed) add(key, byName[typed] || typed);
+    setManual(""); setAdding(null);
+  };
 
   return html`<div class="stack">
     <div class="row between wrap gap">
@@ -296,9 +319,11 @@ export function ScheduleEditor({ profile }) {
       <${WeekToggle} value=${week} onChange=${changeWeek} />
     </div>
     <div class="row gap sticky-bar">
-      <button class="btn grow" disabled=${saving} onClick=${() => persist(false)}>💾 ${isPub ? "שמור שינויים" : "שמור טיוטה"}</button>
-      <button class="btn primary grow" disabled=${saving} onClick=${() => persist(true)}>📤 ${isPub ? "פרסם עדכון" : "פרסם לכולם"}</button>
+      <button class="btn grow" disabled=${saving} onClick=${() => persist(undefined)}>💾 ${isPub ? "שמור ועדכן" : "שמור טיוטה"}</button>
+      ${!isPub && html`<button class="btn primary grow" disabled=${saving} onClick=${() => persist(true)}>📤 פרסם לכולם</button>`}
     </div>
+    ${isPub && html`<div class="row between small"><span class="muted">העובדים רואים את הסידור. שמירה מעדכנת אותם מיד.</span>
+      <button class="link small" disabled=${saving} onClick=${() => persist(false)}>הסתר מהעובדים</button></div>`}
     ${subs.length === 0 && html`<div class="note warn">⚠️ אין הגשות לשבוע זה — ניתן לשבץ עובדים ידנית.</div>`}
 
     ${DAYS.map((d, i) => html`<div class="card">
@@ -306,16 +331,16 @@ export function ScheduleEditor({ profile }) {
       ${DAY_SHIFTS[d.key].map((s) => {
         const key = `${d.key}_${s}`;
         const selected = schedule[key] || [];
-        const avail = subs.filter((x) => x.availability?.[key] && !selected.includes(nameOf(x)));
+        const avail = subs.filter((x) => x.availability?.[key] && !selected.includes(keyOf(x)));
         return html`<div class="slot-block">
           <p class="small muted">${SHIFT_LABELS[s]} · ${selected.length} משובצים</p>
-          ${selected.length > 0 && html`<div class="chips">${selected.map((n) => html`<span class="chip sel">✓ ${n}<button onClick=${() => remove(key, n)}>✕</button></span>`)}</div>`}
+          ${selected.length > 0 && html`<div class="chips">${selected.map((n) => html`<span class="chip sel">✓ ${label(n)}<button onClick=${() => remove(key, n)}>✕</button></span>`)}</div>`}
           ${avail.map((x) => {
-            const c = clash(d.key, s, nameOf(x));
-            return html`<button class="pick" onClick=${() => add(key, nameOf(x))}>
+            const c = clash(d.key, s, keyOf(x));
+            return html`<button class="pick" onClick=${() => add(key, keyOf(x))}>
               <span>+</span>
               <div class="grow">
-                <span>${nameOf(x)} <small class="muted">(${countFor(nameOf(x))} משמרות)</small></span>
+                <span>${label(keyOf(x))} <small class="muted">(${countFor(keyOf(x))} משמרות)</small></span>
                 ${x.slot_notes?.[key] && html`<small class="note-line">💬 ${x.slot_notes[key]}</small>`}
                 ${c.length > 0 && html`<small class="warn-text">⚠️ כבר משובץ ב${c.map((y) => SHIFT_LABELS[y]).join(", ")}</small>`}
               </div>
@@ -324,8 +349,8 @@ export function ScheduleEditor({ profile }) {
           ${adding === key
             ? html`<div class="row gap mt">
                 <input ref=${inputRef} list="people" value=${manual} placeholder="שם עובד..." onInput=${(e) => setManual(e.target.value)}
-                  onKeyDown=${(e) => { if (e.key === "Enter" && manual.trim()) { add(key, manual.trim()); setManual(""); setAdding(null); } if (e.key === "Escape") setAdding(null); }} />
-                <button class="btn sm primary" onClick=${() => { if (manual.trim()) add(key, manual.trim()); setManual(""); setAdding(null); }}>הוסף</button>
+                  onKeyDown=${(e) => { if (e.key === "Enter") addManual(key); if (e.key === "Escape") setAdding(null); }} />
+                <button class="btn sm primary" onClick=${() => addManual(key)}>הוסף</button>
                 <button class="btn sm" onClick=${() => setAdding(null)}>ביטול</button>
               </div>`
             : html`<button class="link small" onClick=${() => { setAdding(key); setManual(""); }}>+ הוסף ידנית</button>`}

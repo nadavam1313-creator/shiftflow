@@ -2,7 +2,7 @@
 import {
   html, useState, useMemo, sb, q, toast, Spinner, ErrorBox, useLoad, isManagerRole, NoAccess, Modal,
   CATEGORIES, PHASES, ROLE_LABELS, todayIL, currentMonthIL, monthRange, recentMonthsIL, formatMonth,
-  formatTime, formatDateTime, addDaysKey,
+  formatTime, formatDateTime, safeUrl,
 } from "./lib.js";
 
 // ================= leaderboard =================
@@ -80,8 +80,8 @@ function BonusPanel({ month, bonus, onSaved }) {
   return html`<div class="card">
     <h3>⚙️ הגדרות בונוס — ${formatMonth(month)}</h3>
     <div class="row gap wrap">
-      <label>פרס ראשון (₪)<input type="number" value=${first} onInput=${(e) => setFirst(e.target.value)} /></label>
-      <label>פרס שני (₪)<input type="number" value=${second} onInput=${(e) => setSecond(e.target.value)} /></label>
+      <label>פרס ראשון (₪)<input type="number" inputmode="numeric" value=${first} onInput=${(e) => setFirst(e.target.value)} /></label>
+      <label>פרס שני (₪)<input type="number" inputmode="numeric" value=${second} onInput=${(e) => setSecond(e.target.value)} /></label>
     </div>
     <label>הודעה לעובדים<input value=${message} onInput=${(e) => setMessage(e.target.value)} placeholder="בסוף החודש הזוכים יקבלו פרס — תתחרו! 🎉" /></label>
     <button class="btn primary" disabled=${busy} onClick=${save}>שמור</button>
@@ -148,7 +148,7 @@ function CompletionsBoard({ date }) {
                 <span>${c?.status === "done" ? "✅" : c?.status === "not_done" ? "❌" : "⬜"}</span>
                 <span class="grow">${t.title}</span>
                 ${c && html`<span class="muted">${c.completed_by?.split("@")[0]} ${formatTime(c.updated_at)}</span>`}
-                ${c?.photo_url && html`<a href=${c.photo_url} target="_blank">📷</a>`}
+                ${safeUrl(c?.photo_url) && html`<a href=${safeUrl(c.photo_url)} target="_blank" rel="noopener">📷</a>`}
               </div>`;
             })}`;
           })}</div>`}
@@ -238,7 +238,11 @@ function UsersAdmin({ profile }) {
     ${waitingInvites.length > 0 && html`<h3>הוזמנו ועוד לא נרשמו (${waitingInvites.length})</h3>
       ${waitingInvites.map((i) => html`<div class="list-item">
         <div class="grow"><b>${i.full_name || i.email}</b> <span class="pill">${ROLE_LABELS[i.role]}</span><p class="small muted" dir="ltr">${i.email}</p></div>
-        <button class="btn sm" onClick=${async () => { await sb.from("staff_invites").delete().eq("email", i.email); reload(); }}>בטל</button>
+        <button class="btn sm" onClick=${async () => {
+          const { data: del, error: err } = await sb.from("staff_invites").delete().eq("email", i.email).select();
+          if (err || !del?.length) toast("אין הרשאה לבטל את ההזמנה הזאת", "bad"); else toast("ההזמנה בוטלה");
+          reload();
+        }}>בטל</button>
       </div>`)}`}
 
     ${editing && html`<${PersonEditor} person=${editing} zones=${data.zones} me=${profile} onClose=${() => setEditing(null)} onSaved=${() => { setEditing(null); reload(); }} />`}
@@ -273,7 +277,8 @@ function PersonEditor({ person, zones, me, onClose, onSaved }) {
   const save = async () => {
     setBusy(true);
     try {
-      await q(sb.from("profiles").update({ full_name: name.trim(), role, allowed_zones: allowed }).eq("id", person.id));
+      const rows = await q(sb.from("profiles").update({ full_name: name.trim(), role, allowed_zones: allowed }).eq("id", person.id).select());
+      if (!rows.length) throw new Error("אין הרשאה לערוך את המשתמש הזה");
       toast("נשמר ✓");
       onSaved();
     } catch (e) { toast(e.message, "bad"); } finally { setBusy(false); }
@@ -284,7 +289,12 @@ function PersonEditor({ person, zones, me, onClose, onSaved }) {
       <label>תפקיד<select value=${role} onChange=${(e) => setRole(e.target.value)}>${roleOptions(me).map((r) => html`<option value=${r}>${ROLE_LABELS[r]}</option>`)}</select></label>
       ${!isManagerRole(role) && html`<p class="small muted">אזורים שהעובד רואה:</p><${ZonePicker} zones=${zones} value=${allowed} onChange=${setAllowed} />`}
       <button class="btn primary wide" disabled=${busy} onClick=${save}>שמור</button>
-      ${person.role === "pending" && html`<button class="btn wide mt bad" onClick=${async () => { await sb.from("profiles").delete().eq("id", person.id); toast("נדחה"); onSaved(); }}>דחה בקשה</button>`}`}
+      ${person.role === "pending" && html`<button class="btn wide mt bad" onClick=${async () => {
+        if (!window.confirm(`לדחות את ${person.full_name || person.email}?`)) return;
+        const { data: del, error: err } = await sb.from("profiles").delete().eq("id", person.id).select();
+        if (err || !del?.length) return toast("הדחייה נכשלה", "bad");
+        toast("הבקשה נדחתה"); onSaved();
+      }}>דחה בקשה</button>`}`}
   <//>`;
 }
 
@@ -346,7 +356,7 @@ function ZoneForm({ zone, onClose, onSaved }) {
   return html`<${Modal} title=${zone.id ? "עריכת אזור" : "אזור חדש"} onClose=${onClose}>
     <label>שם<input value=${f.name} onInput=${set("name")} /></label>
     <label>רובריקה<select value=${f.category} onChange=${set("category")}>${CATEGORIES.map((c) => html`<option>${c}</option>`)}</select></label>
-    <label>סדר תצוגה<input type="number" value=${f.sort_order} onInput=${set("sort_order")} /></label>
+    <label>סדר תצוגה<input type="number" inputmode="numeric" value=${f.sort_order} onInput=${set("sort_order")} /></label>
     <button class="btn primary wide" onClick=${save}>שמור</button>
     ${zone.id && html`<button class="btn wide mt bad" onClick=${del}>מחק אזור</button>`}
   <//>`;
@@ -387,7 +397,8 @@ function TaskForm({ task, zones, onClose, onSaved }) {
     if (!f.title.trim()) return toast("חסר שם משימה", "bad");
     if (!f.shift_phases.length) return toast("בחרו לפחות שלב משמרת אחד", "bad");
     const row = {
-      zone_id: f.zone_id, title: f.title.trim(), description: f.description || null, points: Number(f.points) || 1,
+      zone_id: f.zone_id, title: f.title.trim(), description: f.description || null,
+      points: Number.isFinite(Number(f.points)) && f.points !== "" ? Math.max(0, Math.round(Number(f.points))) : 1,
       shift_phases: f.shift_phases, requires_photo: !!f.requires_photo, sort_order: Number(f.sort_order) || 0,
     };
     try {
@@ -407,8 +418,8 @@ function TaskForm({ task, zones, onClose, onSaved }) {
     <p class="small muted">שלבי משמרת:</p>
     <div class="chips">${PHASES.map((p) => html`<button class=${"chip " + (f.shift_phases.includes(p) ? "sel" : "")} onClick=${() => togglePhase(p)}>${p}</button>`)}</div>
     <div class="row gap mt">
-      <label>נקודות<input type="number" min="0" value=${f.points} onInput=${set("points")} /></label>
-      <label>סדר<input type="number" value=${f.sort_order} onInput=${set("sort_order")} /></label>
+      <label>נקודות<input type="number" inputmode="numeric" min="0" value=${f.points} onInput=${set("points")} /></label>
+      <label>סדר<input type="number" inputmode="numeric" value=${f.sort_order} onInput=${set("sort_order")} /></label>
     </div>
     <label class="check"><input type="checkbox" checked=${f.requires_photo} onChange=${set("requires_photo")} /> חובה לצלם תמונה</label>
     <button class="btn primary wide" onClick=${save}>שמור</button>

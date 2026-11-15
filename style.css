@@ -141,3 +141,40 @@ button.chip { cursor: pointer; }
 .auth-card h2 { margin: 8px 0; }
 .auth-links { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; font-size: 14px; }
 .auth-links a { color: var(--primary); cursor: pointer; font-weight: 600; }
+
+/* ===== mobile hardening ===== */
+html { -webkit-text-size-adjust: 100%; }
+input, select, textarea, label > input, label > select, label > textarea { font-size: 16px; }
+:root { --top-h: calc(56px + env(safe-area-inset-top)); }
+.top { min-height: var(--top-h); left: 0; right: 0; }
+.sticky-bar { top: var(--top-h); }
+.who { min-width: 0; }
+.who > span:first-child { max-width: 32vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.main { padding-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right)); }
+.bottom { left: 0; right: 0; }
+.bottom a { flex: 1 1 0; min-width: 60px; min-height: 52px; justify-content: center; }
+.toasts { left: 0; right: 0; }
+.modal { max-height: 88dvh; overscroll-behavior: contain; }
+.modal-bg { overscroll-behavior: contain; }
+.auth { min-height: 100svh; }
+.btn, .tabs > *, .seg button { min-height: 44px; }
+.btn.sm { min-height: 40px; padding: 8px 12px; }
+.back, .icon-btn { width: 44px; height: 44px; }
+.link, .auth-links a { display: inline-block; padding: 10px 4px; }
+.chip button { width: 28px; height: 28px; margin-inline-start: 2px; }
+.slot { min-height: 48px; }
+input[type=date] { -webkit-appearance: none; appearance: none; min-height: 44px; display: block; }
+input[type=date]::-webkit-date-and-time-value { text-align: start; }
+.date-in { width: auto; min-width: 150px; }
+p[dir=ltr], b[dir=ltr] { text-align: end; }
+.grow, .task b, .list-item b { overflow-wrap: anywhere; }
+.row > input { min-width: 0; flex: 1; }
+.btn.busy { pointer-events: none; opacity: .6; }
+@media (hover: none) {
+  .btn:hover { border-color: var(--line); }
+  .pick:hover { border-color: var(--line); background: #fafbfc; }
+}
+.hub { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.hub a { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 18px 12px; text-align: center; font-weight: 700; min-height: 96px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
+.hub a span { font-size: 28px; }
+.confirm-row { display: flex; gap: 8px; margin-top: 8px; }

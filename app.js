@@ -12,7 +12,17 @@ function useRoute() {
   const get = () => (location.hash.replace(/^#/, "") || "/").split("?")[0];
   const [route, setRoute] = useState(get());
   useEffect(() => {
-    const on = () => { setRoute(get()); window.scrollTo(0, 0); };
+    let last = location.hash;
+    const on = () => {
+      // unsaved schedule edits: ask before leaving the page
+      if (window.__sfDirty && !window.confirm("יש שינויים שלא נשמרו. לצאת בלי לשמור?")) {
+        history.replaceState(null, "", last);
+        return;
+      }
+      window.__sfDirty = false;
+      last = location.hash;
+      setRoute(get()); window.scrollTo(0, 0);
+    };
     addEventListener("hashchange", on);
     return () => removeEventListener("hashchange", on);
   }, []);
@@ -21,15 +31,28 @@ function useRoute() {
 
 const NAV = [
   { path: "/", label: "בית", icon: "🏠" },
-  { path: "/request", label: "הגשת משמרות", icon: "📝" },
+  { path: "/request", label: "הגשה", icon: "📝" },
   { path: "/schedule", label: "סידור", icon: "🗓️" },
   { path: "/leaderboard", label: "תחרות", icon: "🏆" },
-  { path: "/history", label: "היסטוריה", icon: "🕘" },
-  { path: "/shifts", label: "בקשות", icon: "📋", manager: true },
-  { path: "/editor", label: "עריכת סידור", icon: "✏️", manager: true },
-  { path: "/dashboard", label: 'אחמ"ש', icon: "📊", manager: true },
-  { path: "/admin", label: "ניהול", icon: "⚙️", manager: true },
+  { path: "/history", label: "היסטוריה", icon: "🕘", employeeOnly: true },
+  { path: "/manage", label: "ניהול", icon: "⚙️", manager: true, also: ["/shifts", "/editor", "/dashboard", "/admin", "/history"] },
 ];
+
+const HUB = [
+  { path: "/shifts", label: "בקשות משמרות", icon: "📋" },
+  { path: "/editor", label: "עריכת סידור", icon: "✏️" },
+  { path: "/dashboard", label: 'לוח אחמ"ש', icon: "📊" },
+  { path: "/history", label: "היסטוריית משימות", icon: "🕘" },
+  { path: "/admin/users", label: "עובדים והרשאות", icon: "👥" },
+  { path: "/admin/zones", label: "אזורים", icon: "📍" },
+  { path: "/admin/tasks", label: "משימות", icon: "✅" },
+];
+
+function ManageHub({ profile }) {
+  if (!isManagerRole(profile.role)) return html`<div class="empty"><p>אין הרשאה</p></div>`;
+  return html`<div class="stack"><h2>ניהול</h2>
+    <div class="hub">${HUB.map((h) => html`<a href=${"#" + h.path}><span>${h.icon}</span>${h.label}</a>`)}</div></div>`;
+}
 
 function Page({ route, profile }) {
   const parts = route.split("/").filter(Boolean);
@@ -46,6 +69,7 @@ function Page({ route, profile }) {
     case "leaderboard": return html`<${Leaderboard} ...${p} />`;
     case "dashboard": return html`<${ManagerDashboard} ...${p} />`;
     case "admin": return html`<${Admin} ...${p} tab=${parts[1]} />`;
+    case "manage": return html`<${ManageHub} ...${p} />`;
     default: return html`<div class="empty"><p>הדף לא נמצא</p><a class="btn" href="#/">לדף הבית</a></div>`;
   }
 }
@@ -69,10 +93,13 @@ function AuthScreen() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(() => {
     // came back from the confirmation email (possibly opened on another device)
-    const fromEmail = /[?&](code|token_hash|type)=/.test(location.search) || /error_description|access_token/.test(location.hash);
+    const failed = /error_description|error=/.test(location.search + location.hash);
+    const fromEmail = failed || /[?&](code|token_hash|type)=/.test(location.search);
     if (fromEmail) {
       try { history.replaceState(null, "", location.pathname); } catch { /* ignore */ }
-      return { ok: true, text: "המייל אושר ✓ עכשיו אפשר להתחבר עם האימייל והסיסמה." };
+      return failed
+        ? { ok: false, text: "הקישור מהמייל כבר לא בתוקף. נסו להתחבר, ואם לא הצלחתם — בקשו קישור חדש." }
+        : { ok: true, text: "אם לחצתם על קישור האישור — המייל אושר ✓ עכשיו אפשר להתחבר." };
     }
     return null;
   });
@@ -113,7 +140,7 @@ function AuthScreen() {
       <h1>ShiftFlow</h1>
       <p class="muted">באולינג פארק — ניהול משמרות</p>
       <form onSubmit=${submit}>
-        ${mode === "signup" && html`<label>שם מלא<input required value=${fullName} onInput=${(e) => setFullName(e.target.value)} placeholder="למשל: דנה כהן" /></label>`}
+        ${mode === "signup" && html`<label>שם מלא<input required autocomplete="name" value=${fullName} onInput=${(e) => setFullName(e.target.value)} placeholder="למשל: דנה כהן" /></label>`}
         <label>אימייל<input type="email" required dir="ltr" value=${email} onInput=${(e) => setEmail(e.target.value)} autocomplete="email" /></label>
         ${mode !== "forgot" && html`<label>סיסמה<input type="password" required dir="ltr" value=${password} onInput=${(e) => setPassword(e.target.value)} autocomplete=${mode === "login" ? "current-password" : "new-password"} /></label>`}
         ${msg && html`<div class=${"note " + (msg.ok ? "ok" : "bad")}>${msg.text}</div>`}
@@ -161,22 +188,25 @@ function Pending({ profile, onRefresh }) {
 // ---------- shell ----------
 function Shell({ profile, route }) {
   const mgr = isManagerRole(profile.role);
-  const items = NAV.filter((n) => !n.manager || mgr);
-  const active = (path) => (path === "/" ? ["/", ""].includes(route) || route.startsWith("/category") || route.startsWith("/zone") : route.startsWith(path));
+  const items = NAV.filter((n) => (n.manager ? mgr : n.employeeOnly ? !mgr : true));
+  const active = (n) => n.path === "/"
+    ? ["/", ""].includes(route) || route.startsWith("/category") || route.startsWith("/zone")
+    : route.startsWith(n.path) || (n.also || []).some((a) => route.startsWith(a));
+  const logout = () => { if (window.confirm("לצאת מהחשבון?")) sb.auth.signOut(); };
   return html`
     <header class="top">
       <a href="#/" class="brand">🎳 ShiftFlow</a>
       <div class="who">
         <span>${profile.full_name || profile.email}</span>
         <span class="pill">${ROLE_LABELS[profile.role]}</span>
-        <button class="link" onClick=${() => sb.auth.signOut()}>יציאה</button>
+        <button class="link" onClick=${logout}>יציאה</button>
       </div>
     </header>
     <main class="main">
       ${route === "/reset" ? html`<${ResetPassword} />` : html`<${Page} route=${route} profile=${profile} />`}
     </main>
     <nav class="bottom">
-      ${items.map((n) => html`<a href=${"#" + n.path} class=${active(n.path) ? "on" : ""}><span>${n.icon}</span>${n.label}</a>`)}
+      ${items.map((n) => html`<a href=${"#" + n.path} class=${active(n) ? "on" : ""}><span>${n.icon}</span>${n.label}</a>`)}
     </nav>`;
 }
 
@@ -185,6 +215,7 @@ function App() {
   const [session, setSession] = useState(undefined);
   const [profile, setProfile] = useState(null);
   const [profileError, setProfileError] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(true);
 
   useEffect(() => {
     sb.auth.getSession().then(({ data }) => setSession(data.session));
@@ -197,6 +228,7 @@ function App() {
 
   const loadProfile = async () => {
     if (!session) return;
+    setProfileLoading(true);
     try {
       setProfileError(null);
       const p = await q(sb.from("profiles").select("*").eq("id", session.user.id).maybeSingle());
@@ -204,15 +236,22 @@ function App() {
       if (p && p.role !== "pending") trackLogin(p);
     } catch (e) {
       setProfileError(e);
+    } finally {
+      setProfileLoading(false);
     }
   };
 
-  useEffect(() => { setProfile(null); loadProfile(); }, [session?.user?.id]);
+  useEffect(() => { setProfile(null); setProfileLoading(true); loadProfile(); }, [session?.user?.id]);
 
   let body;
   if (session === undefined) body = html`<${Spinner} />`;
   else if (!session) body = html`<${AuthScreen} />`;
   else if (profileError) body = html`<div class="empty"><p>שגיאה בטעינת הפרופיל</p><button class="btn" onClick=${loadProfile}>נסה שוב</button></div>`;
+  else if (profile === null && !profileLoading) body = html`<div class="auth"><div class="auth-card">
+      <div class="logo">🚫</div><h2>החשבון לא פעיל</h2>
+      <p class="muted">החשבון הזה לא מחובר לצוות. פנו למנהל.</p>
+      <button class="btn wide" style="margin-top:12px" onClick=${() => sb.auth.signOut()}>יציאה</button>
+    </div></div>`;
   else if (!profile) body = html`<${Spinner} />`;
   else if (profile.role === "pending") body = html`<${Pending} profile=${profile} onRefresh=${loadProfile} />`;
   else body = html`<${Shell} profile=${profile} route=${route} />`;
