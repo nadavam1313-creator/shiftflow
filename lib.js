@@ -1,0 +1,158 @@
+// ShiftFlow — shared helpers
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import { h, render } from "https://esm.sh/preact@10.24.3";
+import { useState, useEffect, useMemo, useRef, useCallback } from "https://esm.sh/preact@10.24.3/hooks";
+import htm from "https://esm.sh/htm@3.1.1";
+import { SUPABASE_URL, SUPABASE_ANON_KEY, CATEGORIES } from "./config.js";
+
+export const html = htm.bind(h);
+export { render, useState, useEffect, useMemo, useRef, useCallback, CATEGORIES };
+
+export const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { persistSession: true, autoRefreshToken: true, flowType: "pkce", detectSessionInUrl: true },
+});
+
+// Run a supabase query and throw on error
+export async function q(promise) {
+  const { data, error } = await promise;
+  if (error) throw error;
+  return data;
+}
+
+// ---------- dates (Israel time) ----------
+const TZ = "Asia/Jerusalem";
+const pad = (n) => String(n).padStart(2, "0");
+export const toKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+export function parseKey(key) {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(y, m - 1, d, 12);
+}
+export const todayIL = () => new Date().toLocaleDateString("en-CA", { timeZone: TZ });
+export const hourIL = () =>
+  Number(new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", hourCycle: "h23" }).format(new Date()));
+export const dayOfWeekIL = () => parseKey(todayIL()).getDay();
+export function addDaysKey(key, n) {
+  const d = parseKey(key);
+  d.setDate(d.getDate() + n);
+  return toKey(d);
+}
+export function currentWeekSunday() {
+  const t = todayIL();
+  return addDaysKey(t, -parseKey(t).getDay());
+}
+export const nextWeekSunday = () => addDaysKey(currentWeekSunday(), 7);
+export function formatShort(key) {
+  const d = parseKey(key);
+  return `${d.getDate()}.${d.getMonth() + 1}`;
+}
+export const formatWeekRange = (sun) => `${formatShort(sun)} – ${formatShort(addDaysKey(sun, 6))}`;
+export const currentMonthIL = () => todayIL().slice(0, 7);
+export function monthRange(ym) {
+  const [y, m] = ym.split("-").map(Number);
+  return { start: `${ym}-01`, end: `${ym}-${pad(new Date(y, m, 0).getDate())}` };
+}
+export function recentMonthsIL(n) {
+  const [y, m] = currentMonthIL().split("-").map(Number);
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(y, m - 1 - i, 1);
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+  });
+}
+export function formatMonth(ym) {
+  const [y, m] = ym.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString("he-IL", { month: "long", year: "numeric" });
+}
+export function formatTime(iso) {
+  if (!iso) return "";
+  return new Date(iso).toLocaleTimeString("he-IL", { timeZone: TZ, hour: "2-digit", minute: "2-digit" });
+}
+export function formatDateTime(iso) {
+  if (!iso) return "";
+  return new Date(iso).toLocaleString("he-IL", {
+    timeZone: TZ, day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+}
+export function shiftPhaseNow() {
+  const h = hourIL();
+  return h < 14 ? "פתיחת משמרת" : h < 20 ? "במהלך משמרת" : "סוף משמרת";
+}
+
+// ---------- shifts ----------
+export const DAYS = [
+  { key: "sunday", label: "ראשון" },
+  { key: "monday", label: "שני" },
+  { key: "tuesday", label: "שלישי" },
+  { key: "wednesday", label: "רביעי" },
+  { key: "thursday", label: "חמישי" },
+  { key: "friday", label: "שישי" },
+  { key: "saturday", label: 'מוצ"ש' },
+];
+export const DAY_SHIFTS = {
+  sunday: ["morning", "evening"],
+  monday: ["morning", "evening"],
+  tuesday: ["morning", "evening"],
+  wednesday: ["morning", "evening"],
+  thursday: ["morning", "evening"],
+  friday: ["morning"],
+  saturday: ["night"],
+};
+export const SHIFT_LABELS = { morning: "בוקר", evening: "ערב", night: 'מוצ"ש' };
+export const SHIFT_HOURS = { morning: "10:00-16:00", evening: "16:00+", night: "20 דק׳ אחרי צאת שבת - 00:00" };
+export const ALL_SLOTS = DAYS.flatMap((d) => DAY_SHIFTS[d.key].map((s) => ({ day: d, shift: s, key: `${d.key}_${s}` })));
+export const PHASES = ["פתיחת משמרת", "במהלך משמרת", "סוף משמרת"];
+
+export const ROLE_LABELS = { pending: "ממתין לאישור", employee: "עובד", manager: 'אחמ"ש', admin: "מנהל" };
+export const isManagerRole = (r) => r === "manager" || r === "admin";
+
+// ---------- toast ----------
+let toastListener = null;
+export function onToast(fn) { toastListener = fn; }
+export function toast(text, kind = "ok") { toastListener && toastListener({ text, kind, id: Math.random() }); }
+
+// ---------- small UI pieces ----------
+export const Spinner = () => html`<div class="center pad"><div class="spinner"></div></div>`;
+export const ErrorBox = ({ error, retry }) => html`
+  <div class="empty">
+    <p>משהו השתבש בטעינה</p>
+    <p class="muted small">${String(error?.message || error || "")}</p>
+    ${retry && html`<button class="btn" onClick=${retry}>נסה שוב</button>`}
+  </div>`;
+
+// load data with loading/error state
+export function useLoad(fn, deps = []) {
+  const [state, setState] = useState({ loading: true, error: null, data: null });
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    setState((s) => ({ ...s, loading: true, error: null }));
+    fn()
+      .then((data) => alive && setState({ loading: false, error: null, data }))
+      .catch((error) => alive && setState({ loading: false, error, data: null }));
+    return () => { alive = false; };
+  }, [...deps, tick]);
+  return { ...state, reload: () => setTick((t) => t + 1), setData: (d) => setState((s) => ({ ...s, data: typeof d === "function" ? d(s.data) : d })) };
+}
+
+export function WeekToggle({ value, onChange }) {
+  const opts = [
+    { key: currentWeekSunday(), label: "השבוע" },
+    { key: nextWeekSunday(), label: "שבוע הבא" },
+  ];
+  return html`<div class="seg">
+    ${opts.map((o) => html`<button class=${value === o.key ? "on" : ""} onClick=${() => onChange(o.key)}>
+      ${o.label}<small>${formatWeekRange(o.key)}</small></button>`)}
+  </div>`;
+}
+
+export function Modal({ title, children, onClose }) {
+  return html`<div class="modal-bg" onClick=${(e) => e.target === e.currentTarget && onClose()}>
+    <div class="modal">
+      <div class="row between"><h3>${title}</h3><button class="icon-btn" onClick=${onClose}>✕</button></div>
+      ${children}
+    </div>
+  </div>`;
+}
+
+export function NoAccess() {
+  return html`<div class="empty"><p class="big">אין הרשאה</p><p class="muted">העמוד הזה מיועד למנהלים</p></div>`;
+}

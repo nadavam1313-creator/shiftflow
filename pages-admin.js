@@ -1,0 +1,417 @@
+// ShiftFlow — leaderboard, manager dashboard, admin
+import {
+  html, useState, useMemo, sb, q, toast, Spinner, ErrorBox, useLoad, isManagerRole, NoAccess, Modal,
+  CATEGORIES, PHASES, ROLE_LABELS, todayIL, currentMonthIL, monthRange, recentMonthsIL, formatMonth,
+  formatTime, formatDateTime, addDaysKey,
+} from "./lib.js";
+
+// ================= leaderboard =================
+export function Leaderboard({ profile }) {
+  const mgr = isManagerRole(profile.role);
+  const [month, setMonth] = useState(currentMonthIL());
+  const { loading, error, data, reload, setData } = useLoad(async () => {
+    const { start, end } = monthRange(month);
+    const [comps, tasks, bonus, people] = await Promise.all([
+      q(sb.from("task_completions").select("task_id,completed_by").eq("status", "done").gte("shift_date", start).lte("shift_date", end)),
+      q(sb.from("tasks").select("id,points")),
+      q(sb.from("bonus_settings").select("*").eq("month", month).maybeSingle()),
+      q(sb.from("profiles").select("email,full_name")),
+    ]);
+    return { comps, tasks, bonus, people };
+  }, [month]);
+
+  const board = useMemo(() => {
+    if (!data) return [];
+    const pts = Object.fromEntries(data.tasks.map((t) => [t.id, t.points ?? 1]));
+    const names = Object.fromEntries(data.people.map((p) => [p.email, p.full_name]));
+    const score = {};
+    for (const c of data.comps) {
+      if (!c.completed_by) continue;
+      score[c.completed_by] = (score[c.completed_by] || 0) + (pts[c.task_id] ?? 1);
+    }
+    return Object.entries(score).map(([email, points]) => ({ email, name: names[email] || email, points }))
+      .sort((a, b) => b.points - a.points);
+  }, [data]);
+
+  const b = data?.bonus?.data || {};
+  const first = b.first_prize ?? 400;
+  const second = b.second_prize ?? 200;
+
+  return html`<div class="stack">
+    <div class="row between wrap gap">
+      <div><h2>🏆 תחרות העובד המצטיין</h2><p class="muted">תתחרו, תצברו נקודות, תזכו בפרס 💪</p></div>
+      <select value=${month} onChange=${(e) => setMonth(e.target.value)}>
+        ${recentMonthsIL(6).map((m) => html`<option value=${m}>${formatMonth(m)}</option>`)}
+      </select>
+    </div>
+    <div class="note gold">
+      <b>🥇 מקום ראשון | 🥈 מקום שני</b>
+      <p class="small">${mgr ? `מקום ראשון: ₪${first} • מקום שני: ₪${second}` : b.message || "בסוף החודש הזוכים יקבלו פרס — תתחרו! 🎉"}</p>
+    </div>
+    ${loading ? html`<${Spinner} />` : error ? html`<${ErrorBox} error=${error} retry=${reload} />`
+      : board.length === 0 ? html`<div class="empty"><p>אין נתונים לחודש זה עדיין</p></div>`
+      : board.map((e, i) => html`<div class=${"list-item " + (i === 0 ? "gold" : "")}>
+          <span class="rank">${["🥇", "🥈", "🥉"][i] || "#" + (i + 1)}</span>
+          <div class="grow"><b>${e.name}</b>${e.email === profile.email && html` <span class="pill">את/ה</span>`}</div>
+          <div class="center-text"><b class="big">${e.points}</b><p class="small muted">נקודות</p></div>
+          ${mgr && i < 2 && html`<span class="pill gold">₪${i === 0 ? first : second}</span>`}
+        </div>`)}
+    ${mgr && !loading && !error && html`<${BonusPanel} month=${month} bonus=${data.bonus} onSaved=${(row) => setData((d) => ({ ...d, bonus: row }))} />`}
+  </div>`;
+}
+
+function BonusPanel({ month, bonus, onSaved }) {
+  const d = bonus?.data || {};
+  const [first, setFirst] = useState(d.first_prize ?? 400);
+  const [second, setSecond] = useState(d.second_prize ?? 200);
+  const [message, setMessage] = useState(d.message || "");
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    setBusy(true);
+    try {
+      const row = await q(sb.from("bonus_settings").upsert({
+        month, data: { ...d, first_prize: Number(first), second_prize: Number(second), message },
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "month" }).select().single());
+      onSaved(row);
+      toast("הגדרות הבונוס נשמרו ✓");
+    } catch (e) { toast("השמירה נכשלה: " + e.message, "bad"); } finally { setBusy(false); }
+  };
+  return html`<div class="card">
+    <h3>⚙️ הגדרות בונוס — ${formatMonth(month)}</h3>
+    <div class="row gap wrap">
+      <label>פרס ראשון (₪)<input type="number" value=${first} onInput=${(e) => setFirst(e.target.value)} /></label>
+      <label>פרס שני (₪)<input type="number" value=${second} onInput=${(e) => setSecond(e.target.value)} /></label>
+    </div>
+    <label>הודעה לעובדים<input value=${message} onInput=${(e) => setMessage(e.target.value)} placeholder="בסוף החודש הזוכים יקבלו פרס — תתחרו! 🎉" /></label>
+    <button class="btn primary" disabled=${busy} onClick=${save}>שמור</button>
+  </div>`;
+}
+
+// ================= manager dashboard =================
+export function ManagerDashboard({ profile }) {
+  const [tab, setTab] = useState("tasks");
+  const [date, setDate] = useState(todayIL());
+  if (!isManagerRole(profile.role)) return html`<${NoAccess} />`;
+  return html`<div class="stack">
+    <div><h2>לוח אחמ"ש</h2><p class="muted">מעקב אחר עובדים ומשימות</p></div>
+    <div class="row gap wrap">
+      <div class="tabs grow">
+        <button class=${tab === "tasks" ? "on" : ""} onClick=${() => setTab("tasks")}>ביצוע משימות</button>
+        <button class=${tab === "activity" ? "on" : ""} onClick=${() => setTab("activity")}>יומן פעילות</button>
+      </div>
+      <input type="date" class="date-in" value=${date} onInput=${(e) => e.target.value && setDate(e.target.value)} />
+    </div>
+    ${tab === "tasks" ? html`<${CompletionsBoard} date=${date} />` : html`<${ActivityLog} date=${date} />`}
+  </div>`;
+}
+
+function CompletionsBoard({ date }) {
+  const [openZone, setOpenZone] = useState(null);
+  const { loading, error, data, reload } = useLoad(async () => {
+    const [zones, tasks, comps] = await Promise.all([
+      q(sb.from("zones").select("*").order("category").order("sort_order")),
+      q(sb.from("tasks").select("id,zone_id,title,shift_phases")),
+      q(sb.from("task_completions").select("*").eq("shift_date", date)),
+    ]);
+    return { zones, tasks, comps };
+  }, [date]);
+  if (loading) return html`<${Spinner} />`;
+  if (error) return html`<${ErrorBox} error=${error} retry=${reload} />`;
+  const { zones, tasks, comps } = data;
+  const doneIds = new Set(comps.filter((c) => c.status === "done").map((c) => c.task_id));
+  const total = tasks.length;
+  const done = tasks.filter((t) => doneIds.has(t.id)).length;
+  return html`
+    <div class="stats">
+      <div><b>${done}/${total}</b><span>משימות בוצעו</span></div>
+      <div><b>${total ? Math.round((done / total) * 100) : 0}%</b><span>ביצוע</span></div>
+      <div><b>${new Set(comps.map((c) => c.completed_by)).size}</b><span>עובדים פעילים</span></div>
+    </div>
+    ${CATEGORIES.map((cat) => {
+      const zs = zones.filter((z) => z.category === cat);
+      if (!zs.length) return null;
+      return html`<h3>${cat}</h3>${zs.map((z) => {
+        const zt = tasks.filter((t) => t.zone_id === z.id);
+        const zd = zt.filter((t) => doneIds.has(t.id));
+        const isOpen = openZone === z.id;
+        return html`<div class="card">
+          <button class="row between wide plain" onClick=${() => setOpenZone(isOpen ? null : z.id)}>
+            <b>${z.name}</b><span class=${"pill " + (zt.length && zd.length === zt.length ? "ok" : zd.length === 0 ? "bad" : "")}>${zd.length}/${zt.length} ${isOpen ? "▲" : "▼"}</span>
+          </button>
+          ${isOpen && html`<div class="mt">${PHASES.map((p) => {
+            const pt = zt.filter((t) => t.shift_phases.includes(p));
+            if (!pt.length) return null;
+            return html`<p class="small muted mt">${p}</p>${pt.map((t) => {
+              const c = comps.find((x) => x.task_id === t.id);
+              return html`<div class="row gap small">
+                <span>${c?.status === "done" ? "✅" : c?.status === "not_done" ? "❌" : "⬜"}</span>
+                <span class="grow">${t.title}</span>
+                ${c && html`<span class="muted">${c.completed_by?.split("@")[0]} ${formatTime(c.updated_at)}</span>`}
+                ${c?.photo_url && html`<a href=${c.photo_url} target="_blank">📷</a>`}
+              </div>`;
+            })}`;
+          })}</div>`}
+        </div>`;
+      })}`;
+    })}`;
+}
+
+function ActivityLog({ date }) {
+  const { loading, error, data, reload } = useLoad(
+    () => q(sb.from("activity_log").select("*").eq("shift_date", date).order("login_time", { ascending: false }).limit(500)), [date]);
+  if (loading) return html`<${Spinner} />`;
+  if (error) return html`<${ErrorBox} error=${error} retry=${reload} />`;
+  if (!data.length) return html`<div class="empty"><p>אין כניסות בתאריך זה</p></div>`;
+  return html`${data.map((a) => html`<div class="list-item">
+    <span>👤</span>
+    <div class="grow"><b class="small">${a.employee_name}</b><p class="small muted" dir="ltr">${a.employee_email}</p></div>
+    <div class="center-text small"><b>${formatTime(a.login_time)}</b><p class="muted">${a.shift_phase || ""}</p></div>
+  </div>`)}`;
+}
+
+// ================= admin =================
+export function Admin({ profile, tab = "users" }) {
+  if (!isManagerRole(profile.role)) return html`<${NoAccess} />`;
+  const tabs = [["users", "עובדים"], ["zones", "אזורים"], ["tasks", "משימות"]];
+  return html`<div class="stack">
+    <h2>ניהול מערכת</h2>
+    <div class="tabs">${tabs.map(([k, l]) => html`<a class=${tab === k ? "on" : ""} href=${"#/admin/" + k}>${l}</a>`)}</div>
+    ${tab === "zones" ? html`<${ZonesAdmin} />` : tab === "tasks" ? html`<${TasksAdmin} />` : html`<${UsersAdmin} profile=${profile} />`}
+  </div>`;
+}
+
+function UsersAdmin({ profile }) {
+  const [editing, setEditing] = useState(null);
+  const [inviting, setInviting] = useState(false);
+  const { loading, error, data, reload } = useLoad(async () => {
+    const [people, invites, zones] = await Promise.all([
+      q(sb.from("profiles").select("*").order("role").order("full_name")),
+      q(sb.from("staff_invites").select("*").order("created_at", { ascending: false })),
+      q(sb.from("zones").select("id,name,category").order("category").order("sort_order")),
+    ]);
+    return { people, invites, zones };
+  }, []);
+  if (loading) return html`<${Spinner} />`;
+  if (error) return html`<${ErrorBox} error=${error} retry=${reload} />`;
+  const registered = new Set(data.people.map((p) => p.email));
+  const pending = data.people.filter((p) => p.role === "pending");
+  const others = data.people.filter((p) => p.role !== "pending");
+  const waitingInvites = data.invites.filter((i) => !registered.has(i.email));
+  const appUrl = location.origin + location.pathname;
+
+  const approve = async (p) => {
+    try {
+      await q(sb.from("profiles").update({ role: "employee" }).eq("id", p.id));
+      toast(`${p.full_name} אושר/ה ✓`);
+      reload();
+    } catch (e) { toast(e.message, "bad"); }
+  };
+
+  return html`
+    <div class="card">
+      <b>איך מוסיפים עובד?</b>
+      <p class="small">שלחו לעובד את הקישור <b dir="ltr">${appUrl}</b>. העובד לוחץ "עובד חדש? הרשמה" ונרשם עם האימייל שלו. אם הוספתם אותו מראש ב"הזמנה" — הוא נכנס מיד. אחרת הוא יופיע כאן ל"אישור".</p>
+      <div class="row gap wrap">
+        <button class="btn" onClick=${() => { navigator.clipboard?.writeText(appUrl).then(() => toast("הקישור הועתק ✓"), () => toast("העתיקו ידנית: " + appUrl)); }}>📋 העתק קישור</button>
+        <button class="btn primary" onClick=${() => setInviting(true)}>+ הזמנה מראש</button>
+      </div>
+    </div>
+
+    ${pending.length > 0 && html`<h3>⏳ ממתינים לאישור (${pending.length})</h3>
+      ${pending.map((p) => html`<div class="list-item">
+        <div class="grow"><b>${p.full_name}</b><p class="small muted" dir="ltr">${p.email}</p></div>
+        <button class="btn sm ok" onClick=${() => approve(p)}>אשר</button>
+        <button class="btn sm" onClick=${() => setEditing(p)}>עריכה</button>
+      </div>`)}`}
+
+    <h3>צוות (${others.length})</h3>
+    ${others.map((p) => html`<div class="list-item">
+      <div class="grow">
+        <b>${p.full_name}</b> <span class=${"pill " + (isManagerRole(p.role) ? "ok" : "")}>${ROLE_LABELS[p.role]}</span>
+        <p class="small muted" dir="ltr">${p.email}</p>
+        <p class="small muted">${isManagerRole(p.role) ? "רואה את כל האזורים" : `${(p.allowed_zones || []).length} אזורים`} · כניסה אחרונה: ${p.last_seen ? formatDateTime(p.last_seen) : "—"}</p>
+      </div>
+      <button class="btn sm" onClick=${() => setEditing(p)}>עריכה</button>
+    </div>`)}
+
+    ${waitingInvites.length > 0 && html`<h3>הוזמנו ועוד לא נרשמו (${waitingInvites.length})</h3>
+      ${waitingInvites.map((i) => html`<div class="list-item">
+        <div class="grow"><b>${i.full_name || i.email}</b> <span class="pill">${ROLE_LABELS[i.role]}</span><p class="small muted" dir="ltr">${i.email}</p></div>
+        <button class="btn sm" onClick=${async () => { await sb.from("staff_invites").delete().eq("email", i.email); reload(); }}>בטל</button>
+      </div>`)}`}
+
+    ${editing && html`<${PersonEditor} person=${editing} zones=${data.zones} me=${profile} onClose=${() => setEditing(null)} onSaved=${() => { setEditing(null); reload(); }} />`}
+    ${inviting && html`<${InviteForm} zones=${data.zones} me=${profile} onClose=${() => setInviting(false)} onSaved=${() => { setInviting(false); reload(); }} />`}`;
+}
+
+function ZonePicker({ zones, value, onChange }) {
+  return html`<div class="zone-pick">
+    ${CATEGORIES.map((cat) => {
+      const zs = zones.filter((z) => z.category === cat);
+      if (!zs.length) return null;
+      const all = zs.every((z) => value.includes(z.id));
+      return html`<div>
+        <label class="check"><input type="checkbox" checked=${all} onChange=${() => onChange(all ? value.filter((v) => !zs.some((z) => z.id === v)) : [...new Set([...value, ...zs.map((z) => z.id)])])} /> <b>${cat}</b></label>
+        <div class="chips">${zs.map((z) => html`<label class=${"chip pick-chip " + (value.includes(z.id) ? "sel" : "")}>
+          <input type="checkbox" hidden checked=${value.includes(z.id)} onChange=${() => onChange(value.includes(z.id) ? value.filter((v) => v !== z.id) : [...value, z.id])} />${z.name}</label>`)}</div>
+      </div>`;
+    })}
+  </div>`;
+}
+
+function roleOptions(me) {
+  return ["employee", "manager", ...(me.role === "admin" ? ["admin"] : [])];
+}
+
+function PersonEditor({ person, zones, me, onClose, onSaved }) {
+  const [name, setName] = useState(person.full_name || "");
+  const [role, setRole] = useState(person.role === "pending" ? "employee" : person.role);
+  const [allowed, setAllowed] = useState(person.allowed_zones || []);
+  const [busy, setBusy] = useState(false);
+  const locked = person.role === "admin" && me.role !== "admin";
+  const save = async () => {
+    setBusy(true);
+    try {
+      await q(sb.from("profiles").update({ full_name: name.trim(), role, allowed_zones: allowed }).eq("id", person.id));
+      toast("נשמר ✓");
+      onSaved();
+    } catch (e) { toast(e.message, "bad"); } finally { setBusy(false); }
+  };
+  return html`<${Modal} title=${"עריכת " + (person.full_name || person.email)} onClose=${onClose}>
+    ${locked ? html`<p>רק מנהל יכול לערוך מנהל אחר.</p>` : html`
+      <label>שם מלא<input value=${name} onInput=${(e) => setName(e.target.value)} /></label>
+      <label>תפקיד<select value=${role} onChange=${(e) => setRole(e.target.value)}>${roleOptions(me).map((r) => html`<option value=${r}>${ROLE_LABELS[r]}</option>`)}</select></label>
+      ${!isManagerRole(role) && html`<p class="small muted">אזורים שהעובד רואה:</p><${ZonePicker} zones=${zones} value=${allowed} onChange=${setAllowed} />`}
+      <button class="btn primary wide" disabled=${busy} onClick=${save}>שמור</button>
+      ${person.role === "pending" && html`<button class="btn wide mt bad" onClick=${async () => { await sb.from("profiles").delete().eq("id", person.id); toast("נדחה"); onSaved(); }}>דחה בקשה</button>`}`}
+  <//>`;
+}
+
+function InviteForm({ zones, me, onClose, onSaved }) {
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+  const [role, setRole] = useState("employee");
+  const [allowed, setAllowed] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const save = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await q(sb.from("staff_invites").upsert({ email: email.trim().toLowerCase(), full_name: name.trim(), role, allowed_zones: allowed }));
+      toast("ההזמנה נשמרה — עכשיו שלחו לעובד את הקישור להרשמה");
+      onSaved();
+    } catch (err) { toast(err.message, "bad"); } finally { setBusy(false); }
+  };
+  return html`<${Modal} title="הזמנת עובד מראש" onClose=${onClose}>
+    <form onSubmit=${save}>
+      <label>אימייל של העובד<input type="email" required dir="ltr" value=${email} onInput=${(e) => setEmail(e.target.value)} /></label>
+      <label>שם מלא<input required value=${name} onInput=${(e) => setName(e.target.value)} /></label>
+      <label>תפקיד<select value=${role} onChange=${(e) => setRole(e.target.value)}>${roleOptions(me).map((r) => html`<option value=${r}>${ROLE_LABELS[r]}</option>`)}</select></label>
+      ${!isManagerRole(role) && html`<p class="small muted">אזורים:</p><${ZonePicker} zones=${zones} value=${allowed} onChange=${setAllowed} />`}
+      <button class="btn primary wide" disabled=${busy}>שמור הזמנה</button>
+    </form>
+  <//>`;
+}
+
+function ZonesAdmin() {
+  const [edit, setEdit] = useState(null);
+  const { loading, error, data, reload } = useLoad(() => q(sb.from("zones").select("*").order("category").order("sort_order")), []);
+  if (loading) return html`<${Spinner} />`;
+  if (error) return html`<${ErrorBox} error=${error} retry=${reload} />`;
+  return html`
+    <button class="btn primary" onClick=${() => setEdit({ name: "", category: CATEGORIES[0], sort_order: 0 })}>+ אזור חדש</button>
+    ${CATEGORIES.map((cat) => html`<h3>${cat}</h3>${data.filter((z) => z.category === cat).map((z) => html`<div class="list-item">
+      <span class="muted small">${z.sort_order}</span><b class="grow">${z.name}</b>
+      <button class="btn sm" onClick=${() => setEdit(z)}>עריכה</button>
+    </div>`)}`)}
+    ${edit && html`<${ZoneForm} zone=${edit} onClose=${() => setEdit(null)} onSaved=${() => { setEdit(null); reload(); }} />`}`;
+}
+
+function ZoneForm({ zone, onClose, onSaved }) {
+  const [f, setF] = useState(zone);
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const save = async () => {
+    try {
+      const row = { name: f.name.trim(), category: f.category, sort_order: Number(f.sort_order) || 0 };
+      if (zone.id) await q(sb.from("zones").update(row).eq("id", zone.id));
+      else await q(sb.from("zones").insert(row));
+      toast("נשמר ✓"); onSaved();
+    } catch (e) { toast(e.message, "bad"); }
+  };
+  const del = async () => {
+    if (!window.confirm(`למחוק את "${zone.name}" וכל המשימות שלו?`)) return;
+    try { await q(sb.from("zones").delete().eq("id", zone.id)); toast("נמחק"); onSaved(); } catch (e) { toast(e.message, "bad"); }
+  };
+  return html`<${Modal} title=${zone.id ? "עריכת אזור" : "אזור חדש"} onClose=${onClose}>
+    <label>שם<input value=${f.name} onInput=${set("name")} /></label>
+    <label>רובריקה<select value=${f.category} onChange=${set("category")}>${CATEGORIES.map((c) => html`<option>${c}</option>`)}</select></label>
+    <label>סדר תצוגה<input type="number" value=${f.sort_order} onInput=${set("sort_order")} /></label>
+    <button class="btn primary wide" onClick=${save}>שמור</button>
+    ${zone.id && html`<button class="btn wide mt bad" onClick=${del}>מחק אזור</button>`}
+  <//>`;
+}
+
+function TasksAdmin() {
+  const [zoneId, setZoneId] = useState("");
+  const [edit, setEdit] = useState(null);
+  const { loading, error, data, reload } = useLoad(async () => {
+    const [zones, tasks] = await Promise.all([
+      q(sb.from("zones").select("*").order("category").order("sort_order")),
+      q(sb.from("tasks").select("*").order("sort_order")),
+    ]);
+    return { zones, tasks };
+  }, []);
+  if (loading) return html`<${Spinner} />`;
+  if (error) return html`<${ErrorBox} error=${error} retry=${reload} />`;
+  const zid = zoneId || data.zones[0]?.id;
+  const list = data.tasks.filter((t) => t.zone_id === zid);
+  return html`
+    <select value=${zid} onChange=${(e) => setZoneId(e.target.value)}>
+      ${data.zones.map((z) => html`<option value=${z.id}>${z.category} — ${z.name}</option>`)}
+    </select>
+    <button class="btn primary" onClick=${() => setEdit({ zone_id: zid, title: "", description: "", points: 1, shift_phases: [PHASES[0]], requires_photo: false, sort_order: list.length })}>+ משימה חדשה</button>
+    ${list.length === 0 && html`<div class="empty"><p>אין משימות באזור הזה</p></div>`}
+    ${list.map((t) => html`<div class="list-item">
+      <div class="grow"><b>${t.title}</b><p class="small muted">${t.shift_phases.join(" · ")} · ${t.points} נק׳ ${t.requires_photo ? "· 📷 חובה" : ""}</p></div>
+      <button class="btn sm" onClick=${() => setEdit(t)}>עריכה</button>
+    </div>`)}
+    ${edit && html`<${TaskForm} task=${edit} zones=${data.zones} onClose=${() => setEdit(null)} onSaved=${() => { setEdit(null); reload(); }} />`}`;
+}
+
+function TaskForm({ task, zones, onClose, onSaved }) {
+  const [f, setF] = useState(task);
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value });
+  const togglePhase = (p) => setF({ ...f, shift_phases: f.shift_phases.includes(p) ? f.shift_phases.filter((x) => x !== p) : [...f.shift_phases, p] });
+  const save = async () => {
+    if (!f.title.trim()) return toast("חסר שם משימה", "bad");
+    if (!f.shift_phases.length) return toast("בחרו לפחות שלב משמרת אחד", "bad");
+    const row = {
+      zone_id: f.zone_id, title: f.title.trim(), description: f.description || null, points: Number(f.points) || 1,
+      shift_phases: f.shift_phases, requires_photo: !!f.requires_photo, sort_order: Number(f.sort_order) || 0,
+    };
+    try {
+      if (task.id) await q(sb.from("tasks").update(row).eq("id", task.id));
+      else await q(sb.from("tasks").insert(row));
+      toast("נשמר ✓"); onSaved();
+    } catch (e) { toast(e.message, "bad"); }
+  };
+  const del = async () => {
+    if (!window.confirm(`למחוק את "${task.title}"?`)) return;
+    try { await q(sb.from("tasks").delete().eq("id", task.id)); toast("נמחק"); onSaved(); } catch (e) { toast(e.message, "bad"); }
+  };
+  return html`<${Modal} title=${task.id ? "עריכת משימה" : "משימה חדשה"} onClose=${onClose}>
+    <label>אזור<select value=${f.zone_id} onChange=${set("zone_id")}>${zones.map((z) => html`<option value=${z.id}>${z.category} — ${z.name}</option>`)}</select></label>
+    <label>שם המשימה<input value=${f.title} onInput=${set("title")} /></label>
+    <label>תיאור<textarea rows="2" value=${f.description || ""} onInput=${set("description")}></textarea></label>
+    <p class="small muted">שלבי משמרת:</p>
+    <div class="chips">${PHASES.map((p) => html`<button class=${"chip " + (f.shift_phases.includes(p) ? "sel" : "")} onClick=${() => togglePhase(p)}>${p}</button>`)}</div>
+    <div class="row gap mt">
+      <label>נקודות<input type="number" min="0" value=${f.points} onInput=${set("points")} /></label>
+      <label>סדר<input type="number" value=${f.sort_order} onInput=${set("sort_order")} /></label>
+    </div>
+    <label class="check"><input type="checkbox" checked=${f.requires_photo} onChange=${set("requires_photo")} /> חובה לצלם תמונה</label>
+    <button class="btn primary wide" onClick=${save}>שמור</button>
+    ${task.id && html`<button class="btn wide mt bad" onClick=${del}>מחק משימה</button>`}
+  <//>`;
+}
