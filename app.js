@@ -111,7 +111,14 @@ function AuthScreen() {
     try {
       if (mode === "login") {
         const { error } = await sb.auth.signInWithPassword({ email: email.trim(), password });
-        if (error) throw new Error(error.message.includes("Invalid") ? "אימייל או סיסמה שגויים" : error.message);
+        if (error) {
+          const m = error.message || "";
+          throw new Error(
+            /not confirmed/i.test(m) ? "עוד לא אישרת את המייל. חפש/י מייל מ-Supabase (גם בספאם) ולחץ/י על הקישור."
+            : /invalid/i.test(m) ? "אימייל או סיסמה שגויים. פעם ראשונה כאן? צריך קודם להירשם — לחצו \"עובד חדש? הרשמה\" למטה. (הסיסמה מ-Base44 לא עוברת)"
+            : m
+          );
+        }
       } else if (mode === "signup") {
         if (password.length < 6) throw new Error("הסיסמה צריכה להיות לפחות 6 תווים");
         const { data, error } = await sb.auth.signUp({
