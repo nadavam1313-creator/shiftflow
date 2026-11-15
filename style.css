@@ -189,3 +189,7 @@ table.board { width: 100%; border-collapse: collapse; font-size: 14px; }
 
 .alt-done { justify-content: flex-start; text-align: start; white-space: normal; font-weight: 500; }
 .alt-done.on { background: var(--ok-soft); border-color: #8fd9b8; color: var(--ok); }
+.stack-xs { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.board-row { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line, #eee); }
+.board-row:last-child { border-bottom: 0; }
+.board-row .thumb { flex: none; }

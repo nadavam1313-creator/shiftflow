@@ -207,6 +207,8 @@ function Shell({ profile, route }) {
     ? [...NAV.filter((n) => !n.manager && !n.employeeOnly), { path: "/history", label: "היסטוריה", icon: "🕘" },
        ...HUB.filter((h) => h.path !== "/history").map((h) => ({ ...h, path: h.path }))]
     : NAV.filter((n) => (n.manager ? mgr : n.employeeOnly ? !mgr : true));
+  // shift lead of a category (e.g. Gymboree): gets the task board for that category
+  if (!mgr && (profile.supervise_categories || []).length) items.splice(4, 0, { path: "/dashboard", label: 'אחמ"ש', icon: "📊" });
   const active = (n) => n.path === "/"
     ? ["/", ""].includes(route) || route.startsWith("/category") || route.startsWith("/zone")
     : route.startsWith(n.path) || (n.also || []).some((a) => route.startsWith(a));

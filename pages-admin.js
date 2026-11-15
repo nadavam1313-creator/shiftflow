@@ -95,33 +95,44 @@ function BonusPanel({ month, bonus, onSaved }) {
 export function ManagerDashboard({ profile }) {
   const [tab, setTab] = useState("tasks");
   const [date, setDate] = useState(todayIL());
-  if (!isManagerRole(profile.role)) return html`<${NoAccess} />`;
+  const mgr = isManagerRole(profile.role);
+  // managers see everything; a shift lead sees only the categories they supervise
+  const cats = mgr ? CATEGORIES : (profile.supervise_categories || []);
+  if (!cats.length) return html`<${NoAccess} />`;
   return html`<div class="stack">
-    <div><h2>לוח אחמ"ש</h2><p class="muted">מעקב אחר עובדים ומשימות</p></div>
+    <div><h2>לוח אחמ"ש${mgr ? "" : " — " + cats.join(", ")}</h2><p class="muted">מי ביצע כל משימה, מתי, ועם איזו תמונה</p></div>
     <div class="row gap wrap">
-      <div class="tabs grow">
+      ${mgr ? html`<div class="tabs grow">
         <button class=${tab === "tasks" ? "on" : ""} onClick=${() => setTab("tasks")}>ביצוע משימות</button>
         <button class=${tab === "activity" ? "on" : ""} onClick=${() => setTab("activity")}>יומן פעילות</button>
-      </div>
+      </div>` : html`<div class="grow"></div>`}
       <input type="date" class="date-in" value=${date} onInput=${(e) => e.target.value && setDate(e.target.value)} />
     </div>
-    ${tab === "tasks" ? html`<${CompletionsBoard} date=${date} />` : html`<${ActivityLog} date=${date} />`}
+    ${tab === "tasks" || !mgr ? html`<${CompletionsBoard} date=${date} cats=${cats} />` : html`<${ActivityLog} date=${date} />`}
   </div>`;
 }
 
-function CompletionsBoard({ date }) {
+function CompletionsBoard({ date, cats = CATEGORIES }) {
   const [openZone, setOpenZone] = useState(null);
+  const [lightbox, setLightbox] = useState(null);
   const { loading, error, data, reload } = useLoad(async () => {
-    const [zones, tasks, comps] = await Promise.all([
+    const [allZones, allTasks, allComps, people] = await Promise.all([
       q(sb.from("zones").select("*").order("category").order("sort_order")),
-      q(sb.from("tasks").select("id,zone_id,title,shift_phases")),
+      q(sb.from("tasks").select("id,zone_id,title,shift_phases,requires_photo")),
       q(sb.from("task_completions").select("*").eq("shift_date", date)),
+      q(sb.from("profiles").select("email,full_name")),
     ]);
-    return { zones, tasks, comps };
-  }, [date]);
+    const zones = allZones.filter((z) => cats.includes(z.category));
+    const zoneIds = new Set(zones.map((z) => z.id));
+    const tasks = allTasks.filter((t) => zoneIds.has(t.zone_id));
+    const comps = allComps.filter((c) => zoneIds.has(c.zone_id));
+    const names = Object.fromEntries(people.map((p) => [p.email, p.full_name || p.email]));
+    return { zones, tasks, comps, names };
+  }, [date, cats.join()]);
   if (loading) return html`<${Spinner} />`;
   if (error) return html`<${ErrorBox} error=${error} retry=${reload} />`;
-  const { zones, tasks, comps } = data;
+  const { zones, tasks, comps, names } = data;
+  const who = (email) => names[email] || email?.split("@")[0];
   const doneIds = new Set(comps.filter((c) => c.status === "done").map((c) => c.task_id));
   const total = tasks.length;
   const done = tasks.filter((t) => doneIds.has(t.id)).length;
@@ -131,7 +142,7 @@ function CompletionsBoard({ date }) {
       <div><b>${total ? Math.round((done / total) * 100) : 0}%</b><span>ביצוע</span></div>
       <div><b>${new Set(comps.map((c) => c.completed_by)).size}</b><span>עובדים פעילים</span></div>
     </div>
-    ${CATEGORIES.map((cat) => {
+    ${cats.map((cat) => {
       const zs = zones.filter((z) => z.category === cat);
       if (!zs.length) return null;
       return html`<h3>${cat}</h3>${zs.map((z) => {
@@ -146,19 +157,24 @@ function CompletionsBoard({ date }) {
             const pt = zt.filter((t) => t.shift_phases.includes(p));
             if (!pt.length) return null;
             return html`<p class="small muted mt">${p}</p>${pt.map((t) => {
-              const c = comps.find((x) => x.task_id === t.id);
-              return html`<div class="row gap small">
-                <span>${c?.status === "done" ? "✅" : c?.status === "not_done" ? "❌" : "⬜"}</span>
-                <span class="grow">${t.title}</span>
-                ${c && html`<span class="muted">${c.completed_by?.split("@")[0]} ${formatTime(c.updated_at)}</span>`}
-                ${c?.notes && html`<span title=${c.notes}>📝</span>`}
-                ${safeUrl(c?.photo_url) && html`<a href=${safeUrl(c.photo_url)} target="_blank" rel="noopener">📷</a>`}
+              const c = comps.find((x) => x.task_id === t.id && x.shift_phase === p) || comps.find((x) => x.task_id === t.id && !PHASES.includes(x.shift_phase));
+              const ph = safeUrl(c?.photo_url);
+              const missingPhoto = c?.status === "done" && t.requires_photo && !ph && !c.alt_done;
+              return html`<div class="board-row small">
+                <span>${missingPhoto ? "⚠️" : c?.status === "done" ? "✅" : c?.status === "not_done" ? "❌" : "⬜"}</span>
+                <div class="grow">
+                  <span>${t.title}</span>
+                  ${c && html`<div class="muted">${who(c.completed_by)} · ${formatTime(c.updated_at)}${missingPhoto ? " · חסרה תמונה" : ""}</div>`}
+                  ${c?.notes && html`<div class="note-line">📝 ${c.notes}</div>`}
+                </div>
+                ${ph && html`<img class="thumb" src=${ph} loading="lazy" onClick=${() => setLightbox(ph)} />`}
               </div>`;
             })}`;
           })}</div>`}
         </div>`;
       })}`;
-    })}`;
+    })}
+    ${lightbox && html`<div class="lightbox" onClick=${() => setLightbox(null)}><img src=${lightbox} /></div>`}`;
 }
 
 function ActivityLog({ date }) {
@@ -234,7 +250,7 @@ function UsersAdmin({ profile }) {
       <div class="grow">
         <b>${p.full_name}</b> <span class=${"pill " + (isManagerRole(p.role) ? "ok" : "")}>${ROLE_LABELS[p.role]}</span>
         <p class="small muted" dir="ltr">${p.email}</p>
-        <p class="small muted">${isManagerRole(p.role) ? "רואה את כל האזורים" : `${(p.allowed_zones || []).length} אזורים`} · כניסה אחרונה: ${p.last_seen ? formatDateTime(p.last_seen) : "—"}</p>
+        <p class="small muted">${isManagerRole(p.role) ? "רואה את כל האזורים" : `${(p.allowed_zones || []).length} אזורים`}${(p.supervise_categories || []).length && !isManagerRole(p.role) ? ` · אחמ"ש ${p.supervise_categories.join(", ")}` : ""} · כניסה אחרונה: ${p.last_seen ? formatDateTime(p.last_seen) : "—"}</p>
       </div>
       <button class="btn sm" onClick=${() => setEditing(p)}>עריכה</button>
     </div>`)}
@@ -276,12 +292,13 @@ function PersonEditor({ person, zones, me, onClose, onSaved }) {
   const [name, setName] = useState(person.full_name || "");
   const [role, setRole] = useState(person.role === "pending" ? "employee" : person.role);
   const [allowed, setAllowed] = useState(person.allowed_zones || []);
+  const [sup, setSup] = useState(person.supervise_categories || []);
   const [busy, setBusy] = useState(false);
   const locked = person.role === "admin" && me.role !== "admin";
   const save = async () => {
     setBusy(true);
     try {
-      const rows = await q(sb.from("profiles").update({ full_name: name.trim(), role, allowed_zones: allowed }).eq("id", person.id).select());
+      const rows = await q(sb.from("profiles").update({ full_name: name.trim(), role, allowed_zones: allowed, supervise_categories: isManagerRole(role) ? [] : sup }).eq("id", person.id).select());
       if (!rows.length) throw new Error("אין הרשאה לערוך את המשתמש הזה");
       toast("נשמר ✓");
       onSaved();
@@ -291,8 +308,11 @@ function PersonEditor({ person, zones, me, onClose, onSaved }) {
     ${locked ? html`<p>רק מנהל יכול לערוך מנהל אחר.</p>` : html`
       <label>שם מלא<input value=${name} onInput=${(e) => setName(e.target.value)} /></label>
       <label>תפקיד<select value=${role} onChange=${(e) => setRole(e.target.value)}>${roleOptions(me).map((r) => html`<option value=${r}>${ROLE_LABELS[r]}</option>`)}</select></label>
-      ${!isManagerRole(role) && html`<p class="small muted">אזורים שהעובד רואה:</p><${ZonePicker} zones=${zones} value=${allowed} onChange=${setAllowed} />`}
-      <button class="btn primary wide" disabled=${busy} onClick=${save}>שמור</button>
+      ${!isManagerRole(role) && html`<p class="small muted">אזורים שהעובד רואה:</p><${ZonePicker} zones=${zones} value=${allowed} onChange=${setAllowed} />
+        <p class="small muted mt">אחמ"ש — רואה מי ביצע כל משימה ואת התמונות ב:</p>
+        <div class="chips">${CATEGORIES.map((c) => html`<label class=${"chip pick-chip " + (sup.includes(c) ? "sel" : "")}>
+          <input type="checkbox" hidden checked=${sup.includes(c)} onChange=${() => setSup(sup.includes(c) ? sup.filter((x) => x !== c) : [...sup, c])} />${c}</label>`)}</div>`}
+      <button class="btn primary wide mt" disabled=${busy} onClick=${save}>שמור</button>
       ${person.role === "pending" && html`<button class="btn wide mt bad" onClick=${async () => {
         if (!window.confirm(`לדחות את ${person.full_name || person.email}?`)) return;
         const { data: del, error: err } = await sb.from("profiles").delete().eq("id", person.id).select();

@@ -95,7 +95,7 @@ export function ZoneTasks({ profile, zoneId }) {
   const update = async (task, updates) => {
     const existing = compFor(task.id);
     // 30-minute rule only for marking the same thing again (switching between "done" variants is allowed)
-    if (updates.status === "done" && existing?.status === "done" && (updates.notes ?? null) === (existing.notes ?? null)) {
+    if (updates.status === "done" && existing?.status === "done" && !updates.photo_url && (updates.notes ?? null) === (existing.notes ?? null)) {
       const mins = (Date.now() - new Date(existing.updated_at).getTime()) / 60000;
       if (mins < MIN_MINUTES_BETWEEN_COMPLETIONS) {
         toast(`לא ניתן לסמן שוב — יש להמתין עוד ${Math.ceil(MIN_MINUTES_BETWEEN_COMPLETIONS - mins)} דקות`, "bad");
@@ -144,7 +144,6 @@ export function ZoneTasks({ profile, zoneId }) {
 
 function TaskItem({ task, completion, lockedByOther, onUpdate }) {
   const [busy, setBusy] = useState(false);
-  const [showPhoto, setShowPhoto] = useState(false);
   const [lightbox, setLightbox] = useState(false);
   const status = completion?.status;
   const photo = safeUrl(completion?.photo_url);
@@ -171,8 +170,8 @@ function TaskItem({ task, completion, lockedByOther, onUpdate }) {
       const { error } = await sb.storage.from("task-photos").upload(path, small, { contentType: isJpeg ? "image/jpeg" : file.type });
       if (error) throw error;
       const url = sb.storage.from("task-photos").getPublicUrl(path).data.publicUrl;
-      await onUpdate({ status: "done", photo_url: url, notes: null, alt_done: false });
-      toast("התמונה נשמרה ✓");
+      const ok = await onUpdate({ status: "done", photo_url: url, notes: null, alt_done: false });
+      if (ok !== false) toast("התמונה נשמרה — המשימה סומנה כבוצעה ✓");
     } catch (e) {
       toast("העלאת התמונה נכשלה: " + e.message, "bad");
     } finally {
@@ -188,25 +187,25 @@ function TaskItem({ task, completion, lockedByOther, onUpdate }) {
         ${completion && html`<p class="small muted">${status === "done" ? "✓ בוצע" : "✗ לא בוצע"} · ${completion.completed_by} · ${formatTime(completion.updated_at)}</p>`}
         ${completion?.notes && html`<p class="small note-line">📝 ${completion.notes}</p>`}
       </div>
-      <span class="pill">${task.points} נק׳</span>
+      <div class="stack-xs">
+        <span class="pill">${task.points} נק׳</span>
+        ${task.requires_photo && html`<span class="pill warn">📷 חובה</span>`}
+      </div>
     </div>
     ${lockedByOther
       ? html`<p class="small muted" style="margin-top:8px">🔒 סומן ע״י עובד אחר</p>`
       : html`<div class="row gap wrap" style="margin-top:8px">
-          <button class="btn sm ok" disabled=${busy} onClick=${() => (task.requires_photo && !photo ? setShowPhoto(true) : mark("done", { notes: null, alt_done: false }))}>✓ בוצע</button>
+          ${task.requires_photo
+            ? html`<label class=${"btn sm ok" + (busy ? " busy" : "")}>${busy ? "מעלה…" : "📷 בוצע — צלם"}<input type="file" accept="image/*" capture="environment" hidden disabled=${busy} onChange=${(e) => uploadPhoto(e.target)} /></label>`
+            : html`<button class="btn sm ok" disabled=${busy} onClick=${() => mark("done", { notes: null, alt_done: false })}>✓ בוצע</button>`}
           <button class="btn sm" disabled=${busy} onClick=${() => mark("not_done", { notes: null, alt_done: false })}>✗ לא בוצע</button>
-          <label class=${"btn sm" + (busy ? " busy" : "")}>${busy ? "מעלה…" : "📷 תמונה"}<input type="file" accept="image/*" hidden onChange=${(e) => uploadPhoto(e.target)} /></label>
+          ${!task.requires_photo && html`<label class=${"btn sm" + (busy ? " busy" : "")}>${busy ? "מעלה…" : "📷 תמונה"}<input type="file" accept="image/*" hidden onChange=${(e) => uploadPhoto(e.target)} /></label>`}
           ${photo && html`<img class="thumb" src=${photo} onClick=${() => setLightbox(true)} />`}
           ${altLabel && html`<button class=${"btn sm wide alt-done" + (completion?.alt_done ? " on" : "")} disabled=${busy}
             onClick=${() => mark("done", { notes: altLabel, alt_done: true })}>☑️ ${altLabel} <span class="muted">(${altPoints} נק׳)</span></button>`}
         </div>`}
     ${lockedByOther && photo && html`<img class="thumb mt" src=${photo} onClick=${() => setLightbox(true)} />`}
     ${lightbox && html`<div class="lightbox" onClick=${() => setLightbox(false)}><img src=${photo} /></div>`}
-    ${showPhoto && html`<${Modal} title="נדרשת תמונה" onClose=${() => setShowPhoto(false)}>
-      <p>במשימה הזאת צריך תמונה כדי לסמן שבוצעה.</p>
-      <label class="btn primary wide">📷 צלם תמונה<input type="file" accept="image/*" capture="environment" hidden onChange=${(e) => { setShowPhoto(false); uploadPhoto(e.target); }} /></label>
-      <label class="btn wide mt">🖼️ בחר מהגלריה<input type="file" accept="image/*" hidden onChange=${(e) => { setShowPhoto(false); uploadPhoto(e.target); }} /></label>
-    <//>`}
   </div>`;
 }
 
