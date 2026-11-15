@@ -94,7 +94,8 @@ export function ZoneTasks({ profile, zoneId }) {
 
   const update = async (task, updates) => {
     const existing = compFor(task.id);
-    if (updates.status === "done" && existing?.status === "done") {
+    // 30-minute rule only for marking the same thing again (switching between "done" variants is allowed)
+    if (updates.status === "done" && existing?.status === "done" && (updates.notes ?? null) === (existing.notes ?? null)) {
       const mins = (Date.now() - new Date(existing.updated_at).getTime()) / 60000;
       if (mins < MIN_MINUTES_BETWEEN_COMPLETIONS) {
         toast(`לא ניתן לסמן שוב — יש להמתין עוד ${Math.ceil(MIN_MINUTES_BETWEEN_COMPLETIONS - mins)} דקות`, "bad");
@@ -147,6 +148,8 @@ function TaskItem({ task, completion, lockedByOther, onUpdate }) {
   const [lightbox, setLightbox] = useState(false);
   const status = completion?.status;
   const photo = safeUrl(completion?.photo_url);
+  // optional second way to complete a task, e.g. "checked — nothing to refill" (set per task by the manager)
+  const altLabel = (task.extra?.alt_done_label || "").trim();
 
   const mark = async (newStatus, extra = {}) => {
     setBusy(true);
@@ -182,16 +185,19 @@ function TaskItem({ task, completion, lockedByOther, onUpdate }) {
         <b>${task.title}</b>
         ${task.description && html`<p class="muted small">${task.description}</p>`}
         ${completion && html`<p class="small muted">${status === "done" ? "✓ בוצע" : "✗ לא בוצע"} · ${completion.completed_by} · ${formatTime(completion.updated_at)}</p>`}
+        ${completion?.notes && html`<p class="small note-line">📝 ${completion.notes}</p>`}
       </div>
       <span class="pill">${task.points} נק׳</span>
     </div>
     ${lockedByOther
       ? html`<p class="small muted" style="margin-top:8px">🔒 סומן ע״י עובד אחר</p>`
       : html`<div class="row gap wrap" style="margin-top:8px">
-          <button class="btn sm ok" disabled=${busy} onClick=${() => (task.requires_photo && !photo ? setShowPhoto(true) : mark("done"))}>✓ בוצע</button>
-          <button class="btn sm" disabled=${busy} onClick=${() => mark("not_done")}>✗ לא בוצע</button>
+          <button class="btn sm ok" disabled=${busy} onClick=${() => (task.requires_photo && !photo ? setShowPhoto(true) : mark("done", { notes: null }))}>✓ בוצע</button>
+          <button class="btn sm" disabled=${busy} onClick=${() => mark("not_done", { notes: null })}>✗ לא בוצע</button>
           <label class=${"btn sm" + (busy ? " busy" : "")}>${busy ? "מעלה…" : "📷 תמונה"}<input type="file" accept="image/*" hidden onChange=${(e) => uploadPhoto(e.target)} /></label>
           ${photo && html`<img class="thumb" src=${photo} onClick=${() => setLightbox(true)} />`}
+          ${altLabel && html`<button class=${"btn sm wide alt-done" + (completion?.notes === altLabel ? " on" : "")} disabled=${busy}
+            onClick=${() => mark("done", { notes: altLabel })}>☑️ ${altLabel}</button>`}
         </div>`}
     ${lockedByOther && photo && html`<img class="thumb mt" src=${photo} onClick=${() => setLightbox(true)} />`}
     ${lightbox && html`<div class="lightbox" onClick=${() => setLightbox(false)}><img src=${photo} /></div>`}
@@ -233,6 +239,7 @@ export function History({ profile }) {
           <div class="grow">
             <b class="small">${names.t[c.task_id] || "משימה שנמחקה"}</b>
             <p class="small muted">${names.z[c.zone_id] || ""} • ${c.shift_phase || ""} • ${c.completed_by || ""} • ${formatTime(c.updated_at)}</p>
+            ${c.notes && html`<p class="small note-line">📝 ${c.notes}</p>`}
           </div>
           ${safeUrl(c.photo_url) && html`<img class="thumb" src=${safeUrl(c.photo_url)} onClick=${() => setLightbox(safeUrl(c.photo_url))} />`}
         </div>`)}

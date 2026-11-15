@@ -186,3 +186,6 @@ table.board { width: 100%; border-collapse: collapse; font-size: 14px; }
 .board tr.first td { background: var(--gold-soft); }
 .board tr.me td { background: var(--primary-soft); }
 .board .rank-cell { font-size: 20px; width: 44px; text-align: center; }
+
+.alt-done { justify-content: flex-start; text-align: start; white-space: normal; font-weight: 500; }
+.alt-done.on { background: var(--ok-soft); border-color: #8fd9b8; color: var(--ok); }

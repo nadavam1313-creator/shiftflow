@@ -151,6 +151,7 @@ function CompletionsBoard({ date }) {
                 <span>${c?.status === "done" ? "✅" : c?.status === "not_done" ? "❌" : "⬜"}</span>
                 <span class="grow">${t.title}</span>
                 ${c && html`<span class="muted">${c.completed_by?.split("@")[0]} ${formatTime(c.updated_at)}</span>`}
+                ${c?.notes && html`<span title=${c.notes}>📝</span>`}
                 ${safeUrl(c?.photo_url) && html`<a href=${safeUrl(c.photo_url)} target="_blank" rel="noopener">📷</a>`}
               </div>`;
             })}`;
@@ -393,7 +394,7 @@ function TasksAdmin() {
 }
 
 function TaskForm({ task, zones, onClose, onSaved }) {
-  const [f, setF] = useState(task);
+  const [f, setF] = useState({ ...task, alt_done_label: task.extra?.alt_done_label || "" });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value });
   const togglePhase = (p) => setF({ ...f, shift_phases: f.shift_phases.includes(p) ? f.shift_phases.filter((x) => x !== p) : [...f.shift_phases, p] });
   const save = async () => {
@@ -403,6 +404,7 @@ function TaskForm({ task, zones, onClose, onSaved }) {
       zone_id: f.zone_id, title: f.title.trim(), description: f.description || null,
       points: Number.isFinite(Number(f.points)) && f.points !== "" ? Math.max(0, Math.round(Number(f.points))) : 1,
       shift_phases: f.shift_phases, requires_photo: !!f.requires_photo, sort_order: Number(f.sort_order) || 0,
+      extra: { ...(task.extra || {}), alt_done_label: (f.alt_done_label || "").trim() || undefined },
     };
     try {
       if (task.id) await q(sb.from("tasks").update(row).eq("id", task.id));
@@ -425,6 +427,9 @@ function TaskForm({ task, zones, onClose, onSaved }) {
       <label>סדר<input type="number" inputmode="numeric" value=${f.sort_order} onInput=${set("sort_order")} /></label>
     </div>
     <label class="check"><input type="checkbox" checked=${f.requires_photo} onChange=${set("requires_photo")} /> חובה לצלם תמונה</label>
+    <label>סימון חלופי (לא חובה)<input value=${f.alt_done_label || ""} onInput=${set("alt_done_label")}
+      placeholder="למשל: בדקתי — אין מלאי למלא" /></label>
+    <p class="small muted">כפתור נוסף שמסמן את המשימה כבוצעה עם ההערה הזאת.</p>
     <button class="btn primary wide" onClick=${save}>שמור</button>
     ${task.id && html`<button class="btn wide mt bad" onClick=${del}>מחק משימה</button>`}
   <//>`;
