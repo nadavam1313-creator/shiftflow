@@ -152,7 +152,7 @@ export function PublishedSchedule({ profile }) {
     ${loading ? html`<${Spinner} />` : error ? html`<${ErrorBox} error=${error} retry=${reload} />`
       : !data ? html`<div class="empty"><p class="huge">📅</p><p>הסידור לשבוע זה טרם פורסם</p><p class="small muted">כשהמנהלת תפרסם את הסידור הוא יופיע כאן</p></div>`
       : html`
-        <div class="note">${myCount > 0 ? html`השבוע יש לך <b>${myCount}</b> משמרות — מסומנות בצבע 👇` : "אין לך משמרות בשבוע זה"}</div>
+        <div class="note">${myCount > 0 ? html`בשבוע הזה יש לך ${myCount === 1 ? html`<b>משמרת אחת</b> — מסומנת` : html`<b>${myCount}</b> משמרות — מסומנות`} בצבע 👇` : "אין לך משמרות בשבוע זה"}</div>
         ${DAYS.map((d, i) => {
           const shifts = DAY_SHIFTS[d.key].filter((s) => (data[`${d.key}_${s}`] || []).length);
           if (!shifts.length) return null;
