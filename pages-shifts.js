@@ -2,7 +2,7 @@
 import {
   html, useState, useEffect, useRef, sb, q, toast, Spinner, ErrorBox, useLoad, isManagerRole, NoAccess, WeekToggle,
   DAYS, DAY_SHIFTS, SHIFT_LABELS, SHIFT_HOURS, ALL_SLOTS, currentWeekSunday, nextWeekSunday, formatWeekRange,
-  dayOfWeekIL, addDaysKey, formatShort, formatDateTime,
+  dayOfWeekIL, addDaysKey, formatShort, formatDateTime, WEEKDAY_MORNINGS, slotOpen, loadOpenSlots,
 } from "./lib.js";
 
 const MIN_SHIFTS = 3;
@@ -20,11 +20,16 @@ export function ShiftRequest({ profile }) {
   const [busy, setBusy] = useState(false);
   const [justSubmitted, setJustSubmitted] = useState(false);
 
+  const [openSlots, setOpenSlots] = useState([]);
   const { loading, error, data: existing, reload, setData } = useLoad(async () => {
-    const row = await q(sb.from("shift_submissions").select("*")
-      .eq("employee_email", profile.email).eq("week_start", weekStart).maybeSingle());
+    const [row, opened] = await Promise.all([
+      q(sb.from("shift_submissions").select("*").eq("employee_email", profile.email).eq("week_start", weekStart).maybeSingle()),
+      loadOpenSlots(weekStart),
+    ]);
+    setOpenSlots(opened);
     return row;
   }, [weekStart]);
+  const isOpen = (key) => slotOpen(key, openSlots);
 
   useEffect(() => {
     if (existing) {
@@ -34,7 +39,7 @@ export function ShiftRequest({ profile }) {
     }
   }, [existing]);
 
-  const count = Object.values(avail).filter(Boolean).length;
+  const count = Object.entries(avail).filter(([k, v]) => v && isOpen(k)).length;
 
   const submit = async () => {
     if (count < MIN_SHIFTS) return toast(`יש לבחור לפחות ${MIN_SHIFTS} משמרות (בחרת ${count})`, "bad");
@@ -43,8 +48,8 @@ export function ShiftRequest({ profile }) {
       employee_email: profile.email,
       employee_name: profile.full_name || profile.email,
       week_start: weekStart,
-      availability: avail,
-      slot_notes: slotNotes,
+      availability: Object.fromEntries(Object.entries(avail).filter(([k]) => isOpen(k))),
+      slot_notes: Object.fromEntries(Object.entries(slotNotes).filter(([k]) => isOpen(k))),
       notes,
       locked: true,
       updated_at: new Date().toISOString(),
@@ -95,10 +100,14 @@ export function ShiftRequest({ profile }) {
     </div>`}
     ${existing && !locked && html`<div class="note ok">✓ המנהלת פתחה לך את ההגשה לעריכה — אפשר לעדכן</div>`}
 
-    ${DAYS.map((d, i) => html`<div class="card">
+    ${openSlots.length > 0 && html`<div class="note ok">☀️ השבוע נפתחו גם משמרות בוקר (חג / חופש)</div>`}
+    ${DAYS.map((d, i) => {
+      const shifts = DAY_SHIFTS[d.key].filter((s) => isOpen(`${d.key}_${s}`));
+      if (!shifts.length) return null;
+      return html`<div class="card">
       <b>${d.label} <span class="muted small">${formatShort(addDaysKey(weekStart, i))}</span></b>
       <div class="stack-sm" style="margin-top:8px">
-        ${DAY_SHIFTS[d.key].map((s) => {
+        ${shifts.map((s) => {
           const key = `${d.key}_${s}`;
           const on = !!avail[key];
           const note = slotNotes[key] || "";
@@ -119,7 +128,8 @@ export function ShiftRequest({ profile }) {
           </div>`;
         })}
       </div>
-    </div>`)}
+    </div>`;
+    })}
 
     ${locked
       ? notes && html`<p class="note">💬 ${notes}</p>`
@@ -171,8 +181,16 @@ export function PublishedSchedule({ profile }) {
 export function ShiftManager({ profile }) {
   const [week, setWeek] = useState(nextWeekSunday());
   const [open, setOpen] = useState({});
-  const { loading, error, data: subs, reload, setData } = useLoad(
-    () => q(sb.from("shift_submissions").select("*").eq("week_start", week).order("employee_name")), [week]);
+  const [openSlots, setOpenSlots] = useState([]);
+  const { loading, error, data: subs, reload, setData } = useLoad(async () => {
+    const [rows, opened] = await Promise.all([
+      q(sb.from("shift_submissions").select("*").eq("week_start", week).order("employee_name")),
+      loadOpenSlots(week),
+    ]);
+    setOpenSlots(opened);
+    return rows;
+  }, [week]);
+  const isOpen = (key) => slotOpen(key, openSlots);
 
   if (!isManagerRole(profile.role)) return html`<${NoAccess} />`;
 
@@ -192,15 +210,16 @@ export function ShiftManager({ profile }) {
       <div><h2>בקשות משמרות</h2>${subs && html`<p class="muted small">${subs.length} עובדים הגישו</p>`}</div>
       <${WeekToggle} value=${week} onChange=${setWeek} />
     </div>
+    ${!loading && !error && html`<${MorningsPanel} week=${week} openSlots=${openSlots} onChange=${setOpenSlots} />`}
     ${loading ? html`<${Spinner} />` : error ? html`<${ErrorBox} error=${error} retry=${reload} />`
       : subs.length === 0 ? html`<div class="empty"><p>עדיין אף עובד לא הגיש משמרות לשבוע זה</p></div>`
       : html`
         ${DAYS.map((d) => html`<div class="card">
           <button class="row between wide plain" onClick=${() => setOpen((o) => ({ ...o, [d.key]: !o[d.key] }))}>
             <b>${d.label}</b>
-            <span class="muted small">${DAY_SHIFTS[d.key].map((s) => `${SHIFT_LABELS[s]}: ${subs.filter((x) => x.availability?.[`${d.key}_${s}`]).length}`).join(" · ")} ${open[d.key] ? "▲" : "▼"}</span>
+            <span class="muted small">${DAY_SHIFTS[d.key].filter((s) => isOpen(`${d.key}_${s}`)).map((s) => `${SHIFT_LABELS[s]}: ${subs.filter((x) => x.availability?.[`${d.key}_${s}`]).length}`).join(" · ")} ${open[d.key] ? "▲" : "▼"}</span>
           </button>
-          ${open[d.key] && DAY_SHIFTS[d.key].map((s) => {
+          ${open[d.key] && DAY_SHIFTS[d.key].filter((s) => isOpen(`${d.key}_${s}`)).map((s) => {
             const key = `${d.key}_${s}`;
             const yes = subs.filter((x) => x.availability?.[key]);
             const no = subs.filter((x) => !x.availability?.[key]);
@@ -223,10 +242,37 @@ export function ShiftManager({ profile }) {
               ? html`<button class="btn sm warn" onClick=${() => unlock(s)}>🔓 בטל נעילה</button>`
               : html`<span class="pill ok">✏️ פתוח לעריכה</span>`}
           </div>
-          <div class="chips mt">${ALL_SLOTS.map((x) => html`<span class=${"chip " + (s.availability?.[x.key] ? "ok" : "off")}>${x.day.label} ${SHIFT_LABELS[x.shift]}</span>`)}</div>
+          <div class="chips mt">${ALL_SLOTS.filter((x) => isOpen(x.key)).map((x) => html`<span class=${"chip " + (s.availability?.[x.key] ? "ok" : "off")}>${x.day.label} ${SHIFT_LABELS[x.shift]}</span>`)}</div>
           ${s.notes && html`<p class="small note-line">💬 ${s.notes}</p>`}
           <p class="small muted mt">עודכן: ${formatDateTime(s.updated_at)}</p>
         </div>`)}`}
+  </div>`;
+}
+
+// manager: open weekday mornings for employee requests in a specific week
+function MorningsPanel({ week, openSlots, onChange }) {
+  const [busy, setBusy] = useState(false);
+  const toggle = async (key) => {
+    const next = openSlots.includes(key) ? openSlots.filter((k) => k !== key) : [...openSlots, key];
+    setBusy(true);
+    try {
+      await q(sb.from("week_settings").upsert({ week_start: week, open_slots: next, updated_at: new Date().toISOString() }, { onConflict: "week_start" }));
+      onChange(next);
+      toast(next.includes(key) ? "משמרת הבוקר נפתחה להגשה" : "משמרת הבוקר נסגרה להגשה");
+    } catch (e) {
+      toast("השמירה נכשלה: " + e.message, "bad");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return html`<div class="card">
+    <b>☀️ משמרות בוקר (ראשון–חמישי)</b>
+    <p class="small muted">בדרך כלל סגורות להגשה. לחג או לחופש — פתחו כאן את הימים, והעובדים יוכלו להגיש גם בוקר. בכל מקרה אפשר לשבץ בוקר ידנית ב"עריכת סידור".</p>
+    <div class="chips mt">${WEEKDAY_MORNINGS.map((key) => {
+      const day = DAYS.find((d) => key.startsWith(d.key));
+      const on = openSlots.includes(key);
+      return html`<button class=${"chip " + (on ? "sel" : "")} disabled=${busy} onClick=${() => toggle(key)}>${on ? "✓ " : ""}${day.label}</button>`;
+    })}</div>
   </div>`;
 }
 
@@ -241,12 +287,13 @@ export function ScheduleEditor({ profile }) {
   const inputRef = useRef(null);
 
   const { loading, error, data, reload, setData } = useLoad(async () => {
-    const [subs, pub, people] = await Promise.all([
+    const [subs, pub, people, openSlots] = await Promise.all([
       q(sb.from("shift_submissions").select("*").eq("week_start", week)),
       q(sb.from("published_schedules").select("*").eq("week_start", week).maybeSingle()),
       q(sb.from("profiles").select("full_name,email,role").neq("role", "pending").order("full_name")),
+      loadOpenSlots(week),
     ]);
-    return { subs, pub, people };
+    return { subs, pub, people, openSlots };
   }, [week]);
 
   useEffect(() => {
@@ -333,7 +380,8 @@ export function ScheduleEditor({ profile }) {
         const selected = schedule[key] || [];
         const avail = subs.filter((x) => x.availability?.[key] && !selected.includes(keyOf(x)));
         return html`<div class="slot-block">
-          <p class="small muted">${SHIFT_LABELS[s]} · ${selected.length} משובצים</p>
+          <p class="small muted">${SHIFT_LABELS[s]} · ${selected.length} משובצים
+            ${!slotOpen(key, data.openSlots) && html`<span class="pill">סגור להגשה — שיבוץ ידני</span>`}</p>
           ${selected.length > 0 && html`<div class="chips">${selected.map((n) => html`<span class="chip sel">✓ ${label(n)}<button onClick=${() => remove(key, n)}>✕</button></span>`)}</div>`}
           ${avail.map((x) => {
             const c = clash(d.key, s, keyOf(x));

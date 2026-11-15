@@ -99,6 +99,15 @@ export const DAY_SHIFTS = {
 export const SHIFT_LABELS = { morning: "בוקר", evening: "ערב", night: 'מוצ"ש' };
 export const SHIFT_HOURS = { morning: "10:00-16:00", evening: "16:00+", night: "20 דק׳ אחרי צאת שבת - 00:00" };
 export const ALL_SLOTS = DAYS.flatMap((d) => DAY_SHIFTS[d.key].map((s) => ({ day: d, shift: s, key: `${d.key}_${s}` })));
+// Sun–Thu mornings are closed for employee requests by default;
+// a manager can open them for a specific week (holidays / school vacations).
+export const WEEKDAY_MORNINGS = ["sunday", "monday", "tuesday", "wednesday", "thursday"].map((d) => `${d}_morning`);
+export const slotOpen = (key, openSlots = []) => !WEEKDAY_MORNINGS.includes(key) || openSlots.includes(key);
+export async function loadOpenSlots(week) {
+  const { data } = await sb.from("week_settings").select("open_slots").eq("week_start", week).maybeSingle();
+  return data?.open_slots || [];
+}
+
 export const PHASES = ["פתיחת משמרת", "במהלך משמרת", "סוף משמרת"];
 
 export const ROLE_LABELS = { pending: "ממתין לאישור", employee: "עובד", manager: 'אחמ"ש', admin: "מנהל" };
