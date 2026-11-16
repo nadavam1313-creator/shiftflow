@@ -297,3 +297,5 @@ input:focus, select:focus, textarea:focus { border-color: var(--black-2); box-sh
 #splash .sp-brands img { height: 40px; width: auto; background: #fff; border-radius: 10px; padding: 4px 8px; }
 .install-card { border-inline-start: 4px solid var(--primary); }
 .install-card img { border-radius: 50%; background: var(--black); }
+.brands img { height: 48px; }
+#splash .sp-brands img { height: 54px; padding: 5px 10px; }

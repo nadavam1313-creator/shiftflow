@@ -32,7 +32,7 @@ export function Home({ profile }) {
           const st = CATEGORY_STYLE[c] || { logo: "logo-bowling.png", brand: "", cls: "c-bowling" };
           return html`<a class=${"cat-card " + st.cls} href=${"#/category/" + encodeURIComponent(c)}>
             <img class="cat-logo" src=${st.logo} alt=${st.brand} />
-            <div><b>${c}</b><small>${st.brand} · ${zones.filter((z) => z.category === c).length} אזורים</small></div>
+            <div><b>${c}</b><small><bdi>${st.brand}</bdi> · ${zones.filter((z) => z.category === c).length} אזורים</small></div>
             <span class="chev">‹</span>
           </a>`;
         })}
@@ -55,7 +55,7 @@ export function Category({ profile, name }) {
   return html`<div class="stack">
     <div class="row gap"><a class="back" href="#/">→</a>
       <div class="place-head grow">${CATEGORY_STYLE[name] && html`<img src=${CATEGORY_STYLE[name].logo} alt="" />`}
-        <div><h2>${name}</h2><p class="muted">${CATEGORY_STYLE[name]?.brand ? CATEGORY_STYLE[name].brand + " · " : ""}${zones.length} אזורים</p></div></div></div>
+        <div><h2>${name}</h2><p class="muted">${CATEGORY_STYLE[name]?.brand && html`<bdi>${CATEGORY_STYLE[name].brand}</bdi> · `}${zones.length} אזורים</p></div></div></div>
     ${zones.length === 0 && html`<div class="empty"><p>אין אזורים עדיין</p></div>`}
     ${zones.map((z) => {
       const total = data.tasks.filter((t) => t.zone_id === z.id).length;
