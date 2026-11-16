@@ -144,9 +144,10 @@ function AuthScreen() {
 
   return html`<div class="auth">
     <div class="auth-card">
-      <img class="logo-img" src="icon-192.png" alt="ShiftFlow" />
+      <img class="logo-img" src="logo-bowling.png" alt="Bowling Park" />
       <h1>ShiftFlow</h1>
       <p class="muted">קבוצת באולינג פארק</p>
+      <div class="brands"><img src="logo-walter.png" alt="וולטר פארק" /><img src="logo-five.png" alt="FIVE" /></div>
       <form onSubmit=${submit}>
         ${mode === "signup" && html`<label>שם מלא<input required autocomplete="name" value=${fullName} onInput=${(e) => setFullName(e.target.value)} placeholder="למשל: דנה כהן" /></label>`}
         <label>אימייל<input type="email" required dir="ltr" value=${email} onInput=${(e) => setEmail(e.target.value)} autocomplete="email" /></label>
@@ -218,7 +219,7 @@ function Shell({ profile, route }) {
   const logout = () => { if (window.confirm("לצאת מהחשבון?")) sb.auth.signOut(); };
   return html`
     <header class="top">
-      <a href="#/" class="brand"><img src="icon-192.png" alt="" />ShiftFlow</a>
+      <a href="#/" class="brand"><img src="logo-bowling.png" alt="" />ShiftFlow</a>
       <div class="who">
         <span>${profile.full_name || profile.email}</span>
         <span class="pill">${ROLE_LABELS[profile.role]}</span>

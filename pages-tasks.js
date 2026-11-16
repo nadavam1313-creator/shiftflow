@@ -5,10 +5,11 @@ import {
 } from "./lib.js";
 
 const MIN_MINUTES_BETWEEN_COMPLETIONS = 30;
+// each place has its own logo
 const CATEGORY_STYLE = {
-  "באולינג": { icon: "🎳", cls: "c-blue" },
-  "ג'ימבורי": { icon: "🎪", cls: "c-green" },
-  "פייב": { icon: "🎉", cls: "c-orange" },
+  "באולינג": { logo: "logo-bowling.png", brand: "Bowling Park", cls: "c-bowling" },
+  "ג'ימבורי": { logo: "logo-walter.png", brand: "וולטר פארק", cls: "c-walter" },
+  "פייב": { logo: "logo-five.png", brand: "FIVE Club Events", cls: "c-five" },
 };
 
 function visibleZones(zones, profile) {
@@ -28,10 +29,10 @@ export function Home({ profile }) {
     ${cats.length === 0
       ? html`<div class="empty"><p class="big">אין אזורים מורשים</p><p class="muted">פנה למנהל כדי לקבל גישה לאזורים</p></div>`
       : cats.map((c) => {
-          const st = CATEGORY_STYLE[c] || { icon: "📍", cls: "c-blue" };
+          const st = CATEGORY_STYLE[c] || { logo: "logo-bowling.png", brand: "", cls: "c-bowling" };
           return html`<a class=${"cat-card " + st.cls} href=${"#/category/" + encodeURIComponent(c)}>
-            <span class="cat-icon">${st.icon}</span>
-            <div><b>${c}</b><small>${zones.filter((z) => z.category === c).length} אזורים</small></div>
+            <img class="cat-logo" src=${st.logo} alt=${st.brand} />
+            <div><b>${c}</b><small>${st.brand} · ${zones.filter((z) => z.category === c).length} אזורים</small></div>
             <span class="chev">‹</span>
           </a>`;
         })}
@@ -52,7 +53,9 @@ export function Category({ profile, name }) {
   if (error) return html`<${ErrorBox} error=${error} retry=${reload} />`;
   const zones = visibleZones(data.zones, profile);
   return html`<div class="stack">
-    <div class="row gap"><a class="back" href="#/">→</a><div><h2>${name}</h2><p class="muted">${zones.length} אזורים</p></div></div>
+    <div class="row gap"><a class="back" href="#/">→</a>
+      <div class="place-head grow">${CATEGORY_STYLE[name] && html`<img src=${CATEGORY_STYLE[name].logo} alt="" />`}
+        <div><h2>${name}</h2><p class="muted">${CATEGORY_STYLE[name]?.brand ? CATEGORY_STYLE[name].brand + " · " : ""}${zones.length} אזורים</p></div></div></div>
     ${zones.length === 0 && html`<div class="empty"><p>אין אזורים עדיין</p></div>`}
     ${zones.map((z) => {
       const total = data.tasks.filter((t) => t.zone_id === z.id).length;
