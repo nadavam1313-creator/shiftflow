@@ -215,3 +215,5 @@ ol.steps { padding-inline-start: 22px; line-height: 1.8; margin: 8px 0; }
 @keyframes spLine { to { width: 140px; } }
 @keyframes spGlow { 50% { opacity: .55; } }
 @media (prefers-reduced-motion: reduce) { #splash * { animation: none !important; } #splash .sp-line { width: 140px; } }
+.review-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 0; border-top: 1px solid rgba(0,0,0,.08); }
+.btn.bad { background: var(--bad-soft); border-color: #f5b5b5; color: var(--bad); }
