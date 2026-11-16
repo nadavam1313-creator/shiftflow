@@ -231,6 +231,21 @@ export async function shrinkImage(file, max = 1600) {
   }
 }
 
+// ---------- location while working ----------
+let lastFix = null;
+export function getLocation() {
+  if (lastFix && Date.now() - lastFix.at < 60000) return Promise.resolve(lastFix);
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) return reject(new Error("הטלפון לא תומך בשיתוף מיקום"));
+    navigator.geolocation.getCurrentPosition(
+      (p) => { lastFix = { lat: p.coords.latitude, lng: p.coords.longitude, accuracy: Math.round(p.coords.accuracy), at: Date.now() }; resolve(lastFix); },
+      (e) => reject(new Error(e.code === 1
+        ? "צריך לאשר שיתוף מיקום כדי לסמן משימות (בהגדרות הדפדפן ← מיקום ← לאפשר)"
+        : "לא הצלחנו לקבל מיקום — ודאו שה-GPS פועל ונסו שוב")),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
+  });
+}
+
 // ---------- live-photo check ----------
 // Reads the EXIF "taken at" time of a JPEG (phone-local time, i.e. Israel). null if missing.
 async function exifTakenAt(file) {

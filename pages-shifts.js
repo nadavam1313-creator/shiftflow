@@ -6,6 +6,8 @@ import {
 } from "./lib.js";
 
 const MIN_SHIFTS = 3;
+// at least one weekend shift (Thursday, Friday or Saturday night) is required
+const WEEKEND_SLOTS = ["thursday_morning", "thursday_evening", "friday_morning", "saturday_night"];
 const MANAGER_NAME = "מיכל"; // shown in the "locked" message
 
 // ================= employee: submit availability =================
@@ -18,7 +20,7 @@ export function ShiftRequest({ profile }) {
 function ShiftRequestForm({ profile }) {
   const weekStart = nextWeekSunday();
   const day = dayOfWeekIL();
-  const open = day >= 2 && day <= 4; // submission window: Tuesday–Thursday
+  const open = day >= 2 && day <= 3; // submission window: Tuesday–end of Wednesday (Thursday closed)
   const [avail, setAvail] = useState({});
   const [slotNotes, setSlotNotes] = useState({});
   const [notes, setNotes] = useState("");
@@ -48,9 +50,11 @@ function ShiftRequestForm({ profile }) {
   }, [existing]);
 
   const count = Object.entries(avail).filter(([k, v]) => v && isOpen(k)).length;
+  const hasWeekend = WEEKEND_SLOTS.some((k) => avail[k] && isOpen(k));
 
   const submit = async () => {
     if (count < MIN_SHIFTS) return toast(`יש לבחור לפחות ${MIN_SHIFTS} משמרות (בחרת ${count})`, "bad");
+    if (!hasWeekend) return toast("חובה לבחור לפחות משמרת אחת בסופ״ש — חמישי, שישי או מוצ״ש", "bad");
     setBusy(true);
     const row = {
       employee_email: profile.email,
@@ -92,7 +96,7 @@ function ShiftRequestForm({ profile }) {
   if (!open) {
     return html`<div class="empty">
       <p class="huge">🕐</p><p class="big">הגשת משמרות</p>
-      <p class="muted">ההגשה פתוחה מיום שלישי עד סוף יום חמישי.</p>
+      <p class="muted">ההגשה פתוחה מיום שלישי בבוקר עד סוף יום רביעי. ביום חמישי ההגשה סגורה.</p>
       <p class="muted">השבוע הקרוב: <b>${formatWeekRange(weekStart)}</b></p>
       ${existing && html`<a class="btn" href="#/schedule">לסידור העבודה</a>`}
     </div>`;
@@ -108,6 +112,7 @@ function ShiftRequestForm({ profile }) {
     </div>`}
     ${existing && !locked && html`<div class="note ok">✓ המנהלת פתחה לך את ההגשה לעריכה — אפשר לעדכן</div>`}
 
+    ${!locked && html`<div class="note small">📌 לפחות ${MIN_SHIFTS} משמרות, ומהן <b>לפחות אחת בסופ״ש</b> (חמישי, שישי או מוצ״ש). רוצים לצאת מוקדם או להגיע מאוחר? לחצו על 💬 ליד המשמרת וכתבו הערה — ${MANAGER_NAME} תחליט על השיבוץ. ההגשה נסגרת בסוף יום רביעי.</div>`}
     ${openMornings.length > 0 && html`<div class="note ok">☀️ השבוע אפשר להגיש גם משמרות בוקר${holidayNames.length ? ` (${holidayNames.join(", ")})` : ""}</div>`}
     ${DAYS.map((d, i) => {
       const shifts = DAY_SHIFTS[d.key].filter((s) => isOpen(`${d.key}_${s}`));
@@ -126,11 +131,11 @@ function ShiftRequestForm({ profile }) {
                 <span>${SHIFT_LABELS[s]} <small>(${SHIFT_HOURS[s]})</small></span>
                 <b>${on ? "✓ זמין" : "✗ לא זמין"}</b>
               </button>
-              ${!locked && html`<button class=${"icon-btn " + (note ? "on" : "")} title="בקשה מיוחדת"
+              ${!locked && html`<button class=${"icon-btn " + (note ? "on" : "")} title="הערה למשמרת"
                 onClick=${() => setOpenNote(openNote === key ? null : key)}>${openNote === key ? "✕" : "💬"}</button>`}
             </div>
             ${openNote === key && !locked
-              ? html`<input class="mt" value=${note} placeholder="למשל: יכול רק עד 15:00..." autofocus
+              ? html`<input class="mt" value=${note} placeholder="למשל: צריך לצאת ב-21:00 / אגיע ב-17:30" autofocus
                   onInput=${(e) => setSlotNotes((n) => ({ ...n, [key]: e.target.value }))} />`
               : note && html`<p class="small note-line">💬 ${note}</p>`}
           </div>`;
@@ -143,7 +148,7 @@ function ShiftRequestForm({ profile }) {
       ? notes && html`<p class="note">💬 ${notes}</p>`
       : html`<label>הערות כלליות (לא חובה)<textarea rows="2" value=${notes} onInput=${(e) => setNotes(e.target.value)} placeholder="הערות כלליות לשבוע..."></textarea></label>
         <button class="btn primary wide big-btn" disabled=${busy} onClick=${submit}>
-          ${busy ? "שולח…" : `${existing ? "עדכן משמרות" : "הגש משמרות"} (${count} נבחרו)`}
+          ${busy ? "שולח…" : `${existing ? "עדכן משמרות" : "הגש משמרות"} (${count} נבחרו${hasWeekend ? "" : " · חסרה משמרת סופ״ש"})`}
         </button>`}
   </div>`;
 }

@@ -2,7 +2,7 @@
 import {
   html, useState, useMemo, sb, q, toast, Spinner, ErrorBox, useLoad, isManagerRole, NoAccess, Modal,
   CATEGORIES, PHASES, ROLE_LABELS, todayIL, currentMonthIL, monthRange, recentMonthsIL, formatMonth,
-  formatTime, formatDateTime, safeUrl, parseKey, addDaysKey, DAYS, SHIFT_LABELS,
+  formatTime, formatDateTime, safeUrl, parseKey, addDaysKey, DAYS, SHIFT_LABELS, getLocation,
 } from "./lib.js";
 
 // which shift a mark belongs to, by the Israel time it was made
@@ -198,6 +198,7 @@ function CompletionsBoard({ date, cats = CATEGORIES }) {
                   <span>${t.title}</span>
                   ${c && html`<div class="muted">${who(c.completed_by)} · ${formatTime(c.updated_at)}${missingPhoto ? " · חסרה תמונה" : ""}</div>`}
                   ${c && offShift(c) && html`<div class="warn-text">🚩 ${offShift(c)}</div>`}
+                  ${c?.distance_m != null && html`<div class=${c.distance_m > 300 ? "warn-text" : "muted"}>📍 ${c.distance_m > 300 ? "🚩 " : ""}${c.distance_m < 1000 ? c.distance_m + " מ׳" : (c.distance_m / 1000).toFixed(1) + " ק״מ"} מהפארק</div>`}
                   ${c?.notes && html`<div class="note-line">📝 ${c.notes}</div>`}
                 </div>
                 ${ph && html`<img class="thumb" src=${ph} loading="lazy" onClick=${() => setLightbox(ph)} />`}
@@ -230,7 +231,7 @@ export function Admin({ profile, tab = "users" }) {
   return html`<div class="stack">
     <h2>ניהול מערכת</h2>
     <div class="tabs">${tabs.map(([k, l]) => html`<a class=${tab === k ? "on" : ""} href=${"#/admin/" + k}>${l}</a>`)}</div>
-    ${tab === "zones" ? html`<${ZonesAdmin} />` : tab === "tasks" ? html`<${TasksAdmin} />` : html`<${UsersAdmin} profile=${profile} />`}
+    ${tab === "zones" ? html`${profile.role === "admin" && html`<${ParkLocation} />`}<${ZonesAdmin} />` : tab === "tasks" ? html`<${TasksAdmin} />` : html`<${UsersAdmin} profile=${profile} />`}
   </div>`;
 }
 
@@ -379,6 +380,41 @@ function InviteForm({ zones, me, onClose, onSaved }) {
       <button class="btn primary wide" disabled=${busy}>שמור הזמנה</button>
     </form>
   <//>`;
+}
+
+// admin: where the park is, so marks made away from it are refused
+function ParkLocation() {
+  const [busy, setBusy] = useState(false);
+  const { data, reload } = useLoad(() => q(sb.from("app_settings").select("value,updated_at").eq("key", "park").maybeSingle()), []);
+  const park = data?.value;
+  const [radius, setRadius] = useState(null);
+  const r = radius ?? park?.radius ?? 300;
+  const save = async (value) => {
+    setBusy(true);
+    try {
+      await q(sb.from("app_settings").upsert({ key: "park", value, updated_at: new Date().toISOString() }).select());
+      toast("מיקום הפארק נשמר ✓"); reload();
+    } catch (e) { toast(e.message, "bad"); } finally { setBusy(false); }
+  };
+  const setHere = async () => {
+    if (!window.confirm("לשמור את המיקום הנוכחי שלך כמיקום הפארק? עשו את זה רק כשאתם נמצאים בפארק.")) return;
+    setBusy(true);
+    try {
+      const loc = await getLocation();
+      await save({ lat: loc.lat, lng: loc.lng, radius: Number(r) || 300 });
+      toast(`נשמר (דיוק ${loc.accuracy} מ׳)`);
+    } catch (e) { toast(e.message, "bad"); setBusy(false); }
+  };
+  return html`<div class="card">
+    <b>📍 מיקום הפארק</b>
+    <p class="small muted">עובדים יכולים לסמן משימות רק כשהם בפארק. ${park?.lat ? `מוגדר ✓ (עודכן ${formatDateTime(park.updated_at || data.updated_at)})` : "עדיין לא הוגדר — עד שתגדירו, המיקום נשמר אבל לא נבדק."}</p>
+    <div class="row gap wrap mt">
+      <button class="btn primary" disabled=${busy} onClick=${setHere}>${busy ? "רגע…" : "הגדר לפי המיקום שלי עכשיו"}</button>
+      <label class="row gap small">רדיוס (מטר)<input type="number" inputmode="numeric" min="50" style="width:90px" value=${r} onInput=${(e) => setRadius(e.target.value)} /></label>
+      ${park?.lat && html`<button class="btn sm" disabled=${busy} onClick=${() => save({ ...park, radius: Number(r) || 300 })}>שמור רדיוס</button>
+        <a class="btn sm" target="_blank" rel="noopener" href=${`https://maps.google.com/?q=${park.lat},${park.lng}`}>הצג במפה</a>`}
+    </div>
+  </div>`;
 }
 
 function ZonesAdmin() {

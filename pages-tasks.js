@@ -1,7 +1,7 @@
 // ShiftFlow — zones, tasks, history
 import {
   html, useState, useMemo, sb, q, toast, Spinner, ErrorBox, useLoad, isManagerRole, CATEGORIES,
-  todayIL, formatTime, PHASES, Modal, NoAccess, safeUrl, isPaused, LAUNCH_LABEL, isFreshPhoto, stampPhoto,
+  todayIL, formatTime, PHASES, Modal, NoAccess, safeUrl, isPaused, LAUNCH_LABEL, isFreshPhoto, stampPhoto, getLocation,
 } from "./lib.js";
 
 const MIN_MINUTES_BETWEEN_COMPLETIONS = 30;
@@ -106,7 +106,12 @@ export function ZoneTasks({ profile, zoneId }) {
       toast("המשימה כבר סומנה ע״י עובד אחר", "bad");
       return false;
     }
-    const row = { ...updates, updated_at: new Date().toISOString() };
+    // every mark carries the phone's location (required for employees, checked against the park)
+    let loc = null;
+    try { loc = await getLocation(); } catch (e) {
+      if (!mgr) { toast(e.message, "bad"); return false; }
+    }
+    const row = { ...updates, updated_at: new Date().toISOString(), ...(loc ? { lat: loc.lat, lng: loc.lng, loc_accuracy: loc.accuracy } : {}) };
     try {
       let saved;
       if (existing) {
@@ -120,7 +125,7 @@ export function ZoneTasks({ profile, zoneId }) {
       setData((d) => ({ ...d, comps: [...d.comps.filter((c) => c.id !== saved.id), saved] }));
       return true;
     } catch (e) {
-      toast(e.code === "23505" ? "מישהו אחר כבר סימן את המשימה הזאת — רעננו את הדף" : "השמירה נכשלה: " + e.message, "bad");
+      toast(e.code === "23505" ? "מישהו אחר כבר סימן את המשימה הזאת — רעננו את הדף" : e.code === "P0001" ? e.message : "השמירה נכשלה: " + e.message, "bad");
       return false;
     }
   };

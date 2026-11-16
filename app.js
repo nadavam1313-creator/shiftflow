@@ -227,7 +227,7 @@ function Shell({ profile, route }) {
     </header>
     <main class="main">
       ${(route === "/" || route === "") && html`<${InstallCard} />`}
-      ${isPaused(profile) && html`<div class="note gold launch">🚀 ShiftFlow מתחיל לפעול ב<b>${LAUNCH_LABEL}</b>. היום רק נרשמים ומתחברים. מחר נפתח סימון המשימות, והגשת משמרות פתוחה כל שבוע משלישי עד חמישי.</div>`}
+      ${isPaused(profile) && html`<div class="note gold launch">🚀 ShiftFlow מתחיל לפעול ב<b>${LAUNCH_LABEL}</b>. היום רק נרשמים ומתחברים. מחר נפתח סימון המשימות, והגשת משמרות פתוחה כל שבוע משלישי בבוקר עד סוף רביעי.</div>`}
       ${route === "/reset" ? html`<${ResetPassword} />` : html`<${Page} route=${route} profile=${profile} />`}
     </main>
     <nav class="bottom">
