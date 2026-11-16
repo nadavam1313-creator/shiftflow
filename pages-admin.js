@@ -2,8 +2,16 @@
 import {
   html, useState, useMemo, sb, q, toast, Spinner, ErrorBox, useLoad, isManagerRole, NoAccess, Modal,
   CATEGORIES, PHASES, ROLE_LABELS, todayIL, currentMonthIL, monthRange, recentMonthsIL, formatMonth,
-  formatTime, formatDateTime, safeUrl,
+  formatTime, formatDateTime, safeUrl, parseKey, addDaysKey, DAYS, SHIFT_LABELS,
 } from "./lib.js";
+
+// which shift a mark belongs to, by the Israel time it was made
+const slotOfMark = (dayKey, iso) => {
+  if (dayKey === "friday") return "morning";
+  if (dayKey === "saturday") return "night";
+  const h = Number(new Date(iso).toLocaleString("en-GB", { timeZone: "Asia/Jerusalem", hour: "2-digit", hourCycle: "h23" }));
+  return h < 16 ? "morning" : "evening";
+};
 
 // ================= leaderboard =================
 // Everyone sees the full table (places and points); only admins see and edit the prize amounts.
@@ -116,23 +124,41 @@ function CompletionsBoard({ date, cats = CATEGORIES }) {
   const [openZone, setOpenZone] = useState(null);
   const [lightbox, setLightbox] = useState(null);
   const { loading, error, data, reload } = useLoad(async () => {
-    const [allZones, allTasks, allComps, people] = await Promise.all([
+    const dayIdx = parseKey(date).getDay();
+    const [allZones, allTasks, allComps, people, sched] = await Promise.all([
       q(sb.from("zones").select("*").order("category").order("sort_order")),
       q(sb.from("tasks").select("id,zone_id,title,shift_phases,requires_photo")),
       q(sb.from("task_completions").select("*").eq("shift_date", date)),
       q(sb.from("profiles").select("email,full_name")),
+      q(sb.from("published_schedules").select("schedule").eq("week_start", addDaysKey(date, -dayIdx)).eq("is_published", true).maybeSingle()),
     ]);
     const zones = allZones.filter((z) => cats.includes(z.category));
     const zoneIds = new Set(zones.map((z) => z.id));
     const tasks = allTasks.filter((t) => zoneIds.has(t.zone_id));
     const comps = allComps.filter((c) => zoneIds.has(c.zone_id));
     const names = Object.fromEntries(people.map((p) => [p.email, p.full_name || p.email]));
-    return { zones, tasks, comps, names };
+    // who was on the published schedule that day, and in which shift
+    const dayKey = DAYS[dayIdx].key;
+    const onShift = {};
+    for (const [k, list] of Object.entries(sched?.schedule || {})) {
+      if (!k.startsWith(dayKey + "_")) continue;
+      for (const who of list || []) (onShift[String(who).toLowerCase()] ||= []).push(k.slice(dayKey.length + 1));
+    }
+    return { zones, tasks, comps, names, dayKey, onShift, hasSchedule: !!sched };
   }, [date, cats.join()]);
   if (loading) return html`<${Spinner} />`;
   if (error) return html`<${ErrorBox} error=${error} retry=${reload} />`;
-  const { zones, tasks, comps, names } = data;
+  const { zones, tasks, comps, names, dayKey, onShift, hasSchedule } = data;
   const who = (email) => names[email] || email?.split("@")[0];
+  // a mark made by someone who wasn't on the published schedule at that time
+  const offShift = (c) => {
+    if (!hasSchedule || !c?.completed_by) return null;
+    const shifts = onShift[c.completed_by.toLowerCase()] || onShift[(names[c.completed_by] || "").toLowerCase()];
+    if (!shifts) return "לא משובץ היום";
+    const slot = slotOfMark(dayKey, c.updated_at);
+    return shifts.includes(slot) ? null : `סימן ב${SHIFT_LABELS[slot]} אבל משובץ ב${shifts.map((x) => SHIFT_LABELS[x]).join("/")}`;
+  };
+  const suspicious = comps.filter((c) => offShift(c));
   const doneIds = new Set(comps.filter((c) => c.status === "done").map((c) => c.task_id));
   const total = tasks.length;
   const done = tasks.filter((t) => doneIds.has(t.id)).length;
@@ -142,6 +168,12 @@ function CompletionsBoard({ date, cats = CATEGORIES }) {
       <div><b>${total ? Math.round((done / total) * 100) : 0}%</b><span>ביצוע</span></div>
       <div><b>${new Set(comps.map((c) => c.completed_by)).size}</b><span>עובדים פעילים</span></div>
     </div>
+    ${!hasSchedule
+      ? html`<p class="note small">אין סידור מפורסם לשבוע הזה — אי אפשר לבדוק מי סימן משימות כשלא היה במשמרת.</p>`
+      : suspicious.length > 0
+      ? html`<div class="note warn"><b>🚩 ${suspicious.length} סימונים של עובדים שלא היו במשמרת לפי הסידור:</b>
+          ${[...new Set(suspicious.map((c) => c.completed_by))].map((e) => html`<div class="small">• ${who(e)} — ${offShift(suspicious.find((c) => c.completed_by === e))} (${suspicious.filter((c) => c.completed_by === e).length} משימות)</div>`)}</div>`
+      : comps.length > 0 && html`<p class="note ok small">✓ כל הסימונים היום נעשו ע״י עובדים שהיו משובצים במשמרת</p>`}
     ${cats.map((cat) => {
       const zs = zones.filter((z) => z.category === cat);
       if (!zs.length) return null;
@@ -165,6 +197,7 @@ function CompletionsBoard({ date, cats = CATEGORIES }) {
                 <div class="grow">
                   <span>${t.title}</span>
                   ${c && html`<div class="muted">${who(c.completed_by)} · ${formatTime(c.updated_at)}${missingPhoto ? " · חסרה תמונה" : ""}</div>`}
+                  ${c && offShift(c) && html`<div class="warn-text">🚩 ${offShift(c)}</div>`}
                   ${c?.notes && html`<div class="note-line">📝 ${c.notes}</div>`}
                 </div>
                 ${ph && html`<img class="thumb" src=${ph} loading="lazy" onClick=${() => setLightbox(ph)} />`}

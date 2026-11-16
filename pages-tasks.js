@@ -1,7 +1,7 @@
 // ShiftFlow — zones, tasks, history
 import {
   html, useState, useMemo, sb, q, toast, Spinner, ErrorBox, useLoad, isManagerRole, CATEGORIES,
-  todayIL, formatTime, PHASES, Modal, NoAccess, safeUrl, shrinkImage, isPaused, LAUNCH_LABEL,
+  todayIL, formatTime, PHASES, Modal, NoAccess, safeUrl, isPaused, LAUNCH_LABEL, isFreshPhoto, stampPhoto,
 } from "./lib.js";
 
 const MIN_MINUTES_BETWEEN_COMPLETIONS = 30;
@@ -137,12 +137,12 @@ export function ZoneTasks({ profile, zoneId }) {
       : phaseTasks.map((t) => {
           const c = compFor(t.id);
           const lockedByOther = !!c && c.completed_by !== profile.email && !mgr;
-          return html`<${TaskItem} key=${t.id + activePhase} task=${t} completion=${c} lockedByOther=${lockedByOther} paused=${isPaused(profile)} onUpdate=${(u) => update(t, u)} />`;
+          return html`<${TaskItem} key=${t.id + activePhase} task=${t} completion=${c} lockedByOther=${lockedByOther} paused=${isPaused(profile)} who=${profile.full_name || profile.email} onUpdate=${(u) => update(t, u)} />`;
         })}
   </div>`;
 }
 
-function TaskItem({ task, completion, lockedByOther, paused, onUpdate }) {
+function TaskItem({ task, completion, lockedByOther, paused, who, onUpdate }) {
   const [busy, setBusy] = useState(false);
   const [lightbox, setLightbox] = useState(false);
   const status = completion?.status;
@@ -163,7 +163,12 @@ function TaskItem({ task, completion, lockedByOther, paused, onUpdate }) {
     if (!file) return;
     setBusy(true);
     try {
-      const small = await shrinkImage(file);
+      // live photos only: a picture from the gallery (older than a few minutes) is refused
+      if (!(await isFreshPhoto(file))) {
+        toast("אפשר להעלות רק תמונה שצולמה עכשיו במצלמה — לא מהגלריה", "bad");
+        return;
+      }
+      const small = await stampPhoto(file, who || "");
       const isJpeg = small !== file || /jpe?g$/i.test(file.name);
       const ext = isJpeg ? "jpg" : (file.name.split(".").pop() || "jpg").toLowerCase();
       const path = `${todayIL()}/${task.id}-${Date.now()}.${ext}`;
@@ -201,7 +206,7 @@ function TaskItem({ task, completion, lockedByOther, paused, onUpdate }) {
             ? html`<label class=${"btn sm ok" + (busy ? " busy" : "")}>${busy ? "מעלה…" : "📷 בוצע — צלם"}<input type="file" accept="image/*" capture="environment" hidden disabled=${busy} onChange=${(e) => uploadPhoto(e.target)} /></label>`
             : html`<button class="btn sm ok" disabled=${busy} onClick=${() => mark("done", { notes: null, alt_done: false })}>✓ בוצע</button>`}
           <button class="btn sm" disabled=${busy} onClick=${() => mark("not_done", { notes: null, alt_done: false })}>✗ לא בוצע</button>
-          ${!task.requires_photo && html`<label class=${"btn sm" + (busy ? " busy" : "")}>${busy ? "מעלה…" : "📷 תמונה"}<input type="file" accept="image/*" hidden onChange=${(e) => uploadPhoto(e.target)} /></label>`}
+          ${!task.requires_photo && html`<label class=${"btn sm" + (busy ? " busy" : "")}>${busy ? "מעלה…" : "📷 תמונה"}<input type="file" accept="image/*" capture="environment" hidden onChange=${(e) => uploadPhoto(e.target)} /></label>`}
           ${photo && html`<img class="thumb" src=${photo} onClick=${() => setLightbox(true)} />`}
           ${altLabel && html`<button class=${"btn sm wide alt-done" + (completion?.alt_done ? " on" : "")} disabled=${busy}
             onClick=${() => mark("done", { notes: altLabel, alt_done: true })}>☑️ ${altLabel} <span class="muted">(${altPoints} נק׳)</span></button>`}

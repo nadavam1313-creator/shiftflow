@@ -231,6 +231,78 @@ export async function shrinkImage(file, max = 1600) {
   }
 }
 
+// ---------- live-photo check ----------
+// Reads the EXIF "taken at" time of a JPEG (phone-local time, i.e. Israel). null if missing.
+async function exifTakenAt(file) {
+  try {
+    const v = new DataView(await file.slice(0, 256 * 1024).arrayBuffer());
+    if (v.getUint16(0) !== 0xffd8) return null;
+    let p = 2;
+    while (p + 4 < v.byteLength) {
+      const marker = v.getUint16(p), len = v.getUint16(p + 2);
+      if (marker === 0xffe1 && v.getUint32(p + 4) === 0x45786966) { // "Exif"
+        const t = p + 10, le = v.getUint16(t) === 0x4949;
+        const u16 = (o) => v.getUint16(t + o, le), u32 = (o) => v.getUint32(t + o, le);
+        const str = (o, n) => { let r = ""; for (let i = 0; i < n - 1; i++) r += String.fromCharCode(v.getUint8(t + o + i)); return r; };
+        const scan = (ifd, want) => {
+          const n = u16(ifd); const out = {};
+          for (let i = 0; i < n; i++) {
+            const e = ifd + 2 + i * 12, tag = u16(e);
+            if (want.includes(tag)) out[tag] = tag === 0x8769 ? u32(e + 8) : str(u32(e + 8), u32(e + 4));
+          }
+          return out;
+        };
+        const ifd0 = scan(u32(4), [0x8769, 0x0132]);
+        const exif = ifd0[0x8769] ? scan(ifd0[0x8769], [0x9003]) : {};
+        const d = exif[0x9003] || ifd0[0x0132];
+        const m = d && d.match(/^(\d{4}):(\d\d):(\d\d) (\d\d):(\d\d):(\d\d)/);
+        return m ? Date.UTC(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : null;
+      }
+      if ((marker & 0xff00) !== 0xff00) return null;
+      p += 2 + len;
+    }
+  } catch {}
+  return null;
+}
+const nowILasUTC = () => {
+  const f = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" })
+    .formatToParts(new Date()).reduce((a, x) => ((a[x.type] = x.value), a), {});
+  return Date.UTC(+f.year, f.month - 1, +f.day, +f.hour, +f.minute, +f.second);
+};
+// a photo must have been taken in the last few minutes (camera, not the gallery)
+export async function isFreshPhoto(file, maxMinutes = 5) {
+  const taken = await exifTakenAt(file);
+  const ageMin = taken != null ? (nowILasUTC() - taken) / 60000 : (Date.now() - (file.lastModified || 0)) / 60000;
+  return ageMin <= maxMinutes && ageMin >= -maxMinutes;
+}
+// shrink + stamp the date, time and employee name on the photo
+export async function stampPhoto(file, label, max = 1600) {
+  try {
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * scale);
+    c.height = Math.round(bmp.height * scale);
+    const g = c.getContext("2d");
+    g.drawImage(bmp, 0, 0, c.width, c.height);
+    const fs = Math.max(16, Math.round(c.width / 28));
+    const text = `${formatDateTime(new Date().toISOString())} · ${label}`;
+    g.font = `bold ${fs}px Heebo, Arial, sans-serif`;
+    g.direction = "rtl";
+    const h = fs * 1.9;
+    g.fillStyle = "rgba(0,0,0,.55)";
+    g.fillRect(0, c.height - h, c.width, h);
+    g.fillStyle = "#fff";
+    g.textBaseline = "middle";
+    g.textAlign = "right";
+    g.fillText("📷 " + text, c.width - fs * 0.6, c.height - h / 2);
+    const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.82));
+    return blob || file;
+  } catch {
+    return file;
+  }
+}
+
 export function NoAccess() {
   return html`<div class="empty"><p class="big">אין הרשאה</p><p class="muted">העמוד הזה מיועד למנהלים</p></div>`;
 }
