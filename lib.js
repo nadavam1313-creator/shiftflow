@@ -98,7 +98,7 @@ export const DAY_SHIFTS = {
 };
 export const SHIFT_LABELS = { morning: "בוקר", evening: "ערב", night: 'מוצ"ש' };
 // extra groups in the weekly schedule (from the manager's schedule sheet): shown to employees, count as "on shift" that day
-export const EXTRA_ROLES = { walter: "וולטר", kitchen: "מטבח", closing: "סגירה" };
+export const EXTRA_ROLES = { walter: "וולטר", walter_morning: "וולטר בוקר", walter_evening: "וולטר ערב", kitchen: "מטבח", closing: "סגירה" };
 export const SHIFT_HOURS = { morning: "10:00-16:00", evening: "מ-16:00", night: "20 דק׳ אחרי צאת שבת - 00:00" };
 export const ALL_SLOTS = DAYS.flatMap((d) => DAY_SHIFTS[d.key].map((s) => ({ day: d, shift: s, key: `${d.key}_${s}` })));
 // ---------- Hebrew calendar: holidays & school vacations (Israel) ----------

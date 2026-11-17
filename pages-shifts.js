@@ -2,7 +2,7 @@
 import {
   html, useState, useEffect, useRef, sb, q, toast, Spinner, ErrorBox, useLoad, isManagerRole, NoAccess, WeekToggle, isPaused, LAUNCH_LABEL,
   DAYS, DAY_SHIFTS, SHIFT_LABELS, SHIFT_HOURS, ALL_SLOTS, currentWeekSunday, nextWeekSunday, formatWeekRange,
-  dayOfWeekIL, addDaysKey, formatShort, formatDateTime, WEEKDAY_MORNINGS, slotChecker, loadWeekSettings, morningState, EXTRA_ROLES,
+  dayOfWeekIL, addDaysKey, formatShort, formatDateTime, WEEKDAY_MORNINGS, slotChecker, loadWeekSettings, morningState, EXTRA_ROLES, holidayFor,
 } from "./lib.js";
 
 const MIN_SHIFTS = 3;
@@ -177,7 +177,9 @@ export function PublishedSchedule({ profile }) {
   const mine = [];
   if (data) DAYS.forEach((d, i) => {
     BOWLING_ROWS(d.key).forEach(([k, l]) => { if ((data[`${d.key}_${k}`] || []).some(isMe)) mine.push({ day: d.label, date: formatShort(addDaysKey(week, i)), place: "באולינג", what: l }); });
-    if ((data[`${d.key}_walter`] || []).some(isMe)) mine.push({ day: d.label, date: formatShort(addDaysKey(week, i)), place: "וולטר פארק", what: "" });
+    [["walter", ""], ["walter_morning", "בוקר"], ["walter_evening", "ערב"]].forEach(([k, l]) => {
+      if ((data[`${d.key}_${k}`] || []).some(isMe)) mine.push({ day: d.label, date: formatShort(addDaysKey(week, i)), place: "וולטר פארק", what: l });
+    });
   });
   const Row = ({ dayKey, k, l }) => {
     const list = listOf(dayKey, k);
@@ -200,7 +202,8 @@ export function PublishedSchedule({ profile }) {
         ${DAYS.map((d, i) => {
           const bowl = BOWLING_ROWS(d.key).filter(([k]) => listOf(d.key, k).length);
           const walter = listOf(d.key, "walter");
-          if (!bowl.length && !walter.length) return null;
+          const wShifts = [["walter_morning", "morning"], ["walter_evening", "evening"]].filter(([k]) => listOf(d.key, k).length);
+          if (!bowl.length && !walter.length && !wShifts.length) return null;
           return html`<div class="card sched-day">
             <div class="sched-day-head"><b>${d.label}</b> <span class="muted small">${formatShort(addDaysKey(week, i))}</span></div>
             ${bowl.length > 0 && html`<div class="sched-place bowling">
@@ -216,12 +219,19 @@ export function PublishedSchedule({ profile }) {
                     <div class="chips">${closing.map((n) => html`<span class=${"chip " + (isMe(n) ? "me" : "")}>${label(n)}</span>`)}</div></div>`}
                 </div>`;
               })}
-              <${Row} dayKey=${d.key} k="kitchen" l="🍳 מטבח" />
+              ${listOf(d.key, "kitchen").length > 0 && html`<div class="shift-block kitchen">
+                <div class="shift-head"><span>🍳 מטבח</span></div>
+                <div class="chips">${listOf(d.key, "kitchen").map((n) => html`<span class=${"chip " + (isMe(n) ? "me" : "")}>${label(n)}</span>`)}</div>
+              </div>`}
             </div>`}
-            ${walter.length > 0 && html`<div class="sched-place walter">
+            ${(walter.length > 0 || wShifts.length > 0) && html`<div class="sched-place walter">
               <div class="sched-place-head"><img src="logo-walter.png" alt="" />וולטר פארק</div>
-              <div class="sched-row"><span class="sched-label">עובדים</span>
-                <div class="chips">${walter.map((n) => html`<span class=${"chip " + (isMe(n) ? "me" : "")}>${label(n)}</span>`)}</div></div>
+              ${wShifts.map(([k, sh]) => html`<div class=${"shift-block " + sh}>
+                <div class="shift-head"><span>${SHIFT_ICON[sh]} ${SHIFT_LABELS[sh]}</span></div>
+                <div class="chips">${listOf(d.key, k).map((n) => html`<span class=${"chip " + (isMe(n) ? "me" : "")}>${label(n)}</span>`)}</div>
+              </div>`)}
+              ${walter.length > 0 && html`<div class="sched-row"><span class="sched-label">${wShifts.length ? "כל היום" : "עובדים"}</span>
+                <div class="chips">${walter.map((n) => html`<span class=${"chip " + (isMe(n) ? "me" : "")}>${label(n)}</span>`)}</div></div>`}
             </div>`}
           </div>`;
         })}`}
@@ -416,6 +426,28 @@ export function ScheduleEditor({ profile }) {
     if (typed) add(key, byName[typed] || typed);
     setManual(""); setAdding(null);
   };
+  // extra groups of the schedule sheet: kitchen + closing (Bowling), Walter Park — on holidays/vacations Walter has morning & evening
+  const EXTRA_TITLES = { kitchen: "🍳 מטבח · באולינג", closing: "🔒 סגירה · באולינג", walter: "🐙 וולטר פארק", walter_morning: "🐙 וולטר פארק · ☀️ בוקר", walter_evening: "🐙 וולטר פארק · 🌙 ערב" };
+  const extraRolesFor = (dayKey, i) => {
+    const holiday = !!holidayFor(addDaysKey(week, i));
+    const has = (k) => (schedule[`${dayKey}_${k}`] || []).length > 0;
+    return ["kitchen", "closing", "walter", ...(holiday || has("walter_morning") || has("walter_evening") ? ["walter_morning", "walter_evening"] : [])];
+  };
+  const ExtraGroup = ({ k, title, cls }) => {
+    const selected = schedule[k] || [];
+    return html`<div class=${"slot-block extra " + cls}>
+      <p class="small"><b>${title}</b> <span class="muted">· ${selected.length} משובצים</span></p>
+      ${selected.length > 0 && html`<div class="chips">${selected.map((n) => html`<span class="chip sel">✓ ${label(n)}<button onClick=${() => remove(k, n)}>✕</button></span>`)}</div>`}
+      ${adding === k
+        ? html`<div class="row gap mt">
+            <input ref=${inputRef} list="people" value=${manual} placeholder="שם עובד..." onInput=${(e) => setManual(e.target.value)}
+              onKeyDown=${(e) => { if (e.key === "Enter") addManual(k); if (e.key === "Escape") setAdding(null); }} />
+            <button class="btn sm primary" onClick=${() => addManual(k)}>הוסף</button>
+            <button class="btn sm" onClick=${() => setAdding(null)}>ביטול</button>
+          </div>`
+        : html`<button class="link small" onClick=${() => { setAdding(k); setManual(""); }}>+ הוסף עובד</button>`}
+    </div>`;
+  };
 
   return html`<div class="stack">
     <div class="row between wrap gap">
@@ -434,9 +466,11 @@ export function ScheduleEditor({ profile }) {
     ${subs.length === 0 && html`<div class="note warn">⚠️ אין הגשות לשבוע זה — ניתן לשבץ עובדים ידנית.</div>`}
 
     ${DAYS.map((d, i) => html`<div class="card">
-      <b>${d.label} <span class="muted small">${formatShort(addDaysKey(week, i))}</span></b>
-      ${DAY_SHIFTS[d.key].map((s) => {
+      <b>${d.label} <span class="muted small">${formatShort(addDaysKey(week, i))}</span>
+        ${holidayFor(addDaysKey(week, i)) && html` <span class="pill ok">${holidayFor(addDaysKey(week, i))}</span>`}</b>
+      ${[...DAY_SHIFTS[d.key], ...extraRolesFor(d.key, i)].map((s) => {
         const key = `${d.key}_${s}`;
+        if (EXTRA_ROLES[s]) return ExtraGroup({ k: key, title: EXTRA_TITLES[s], cls: s.startsWith("walter") ? "walter" : "bowling" }); // plain call keeps input focus
         const selected = schedule[key] || [];
         const avail = subs.filter((x) => x.availability?.[key] && !selected.includes(keyOf(x)));
         return html`<div class="slot-block">

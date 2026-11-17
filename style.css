@@ -334,3 +334,13 @@ input:focus, select:focus, textarea:focus { border-color: var(--black-2); box-sh
 .shift-block.evening .sched-label, .shift-block.night .sched-label { color: #d4d4d8; }
 .sched-place.bowling > .sched-row { margin-top: 8px; border-top: 0; }
 .sched-label { width: 72px; white-space: nowrap; }
+.shift-block.kitchen { background: #ecfdf5; border-color: #6ee7b7; border-width: 2px; }
+.shift-block.kitchen .shift-head { color: #047857; font-size: 15px; }
+.shift-block.kitchen .chip { background: #fff; border: 1px solid #6ee7b7; color: #065f46; font-weight: 700; }
+.shift-block.kitchen .chip.me { background: #047857; color: #fff; }
+.sched-place.walter .shift-block.morning { background: #fffbeb; }
+.sched-place.walter .shift-block.evening { background: #1a12b5; border-color: #1a12b5; }
+.sched-place.walter .shift-block.evening .chip { background: #3b33d1; }
+.slot-block.extra { border-inline-start: 4px solid; padding-inline-start: 8px; border-top-style: solid; }
+.slot-block.extra.bowling { border-inline-start-color: #e11d26; }
+.slot-block.extra.walter { border-inline-start-color: #1a12b5; }
