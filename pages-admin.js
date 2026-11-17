@@ -174,6 +174,20 @@ function CompletionsBoard({ date, cats = CATEGORIES, canReview = false, me = "" 
       <div><b>${total ? Math.round((done / total) * 100) : 0}%</b><span>ביצוע</span></div>
       <div><b>${new Set(comps.map((c) => c.completed_by)).size}</b><span>עובדים פעילים</span></div>
     </div>
+    ${(() => {
+      // every photo taken on this day, in one place (tap to enlarge)
+      const shots = comps.filter((c) => safeUrl(c.photo_url)).sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
+      const taskName = (id) => tasks.find((t) => t.id === id)?.title || "";
+      return html`<div class="card">
+        <b>📷 תמונות מהיום (${shots.length})</b>
+        ${shots.length === 0
+          ? html`<p class="small muted mt">לא צולמו תמונות ביום הזה. תמונה נשמרת רק כשעובד מצלם — במשימות שמסומנות "חובה צילום" הוא חייב.</p>`
+          : html`<div class="gallery mt">${shots.map((c) => html`<button class="plain shot" onClick=${() => setLightbox(safeUrl(c.photo_url))}>
+              <img src=${safeUrl(c.photo_url)} loading="lazy" />
+              <span>${taskName(c.task_id)}<br /><small>${who(c.completed_by)} · ${formatTime(c.updated_at)}</small></span>
+            </button>`)}</div>`}
+      </div>`;
+    })()}
     ${!hasSchedule
       ? html`<p class="note small">אין סידור מפורסם לשבוע הזה — אי אפשר לבדוק מי סימן משימות כשלא היה במשמרת.</p>`
       : suspicious.length > 0

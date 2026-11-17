@@ -2,7 +2,7 @@
 import {
   html, useState, useEffect, useRef, sb, q, toast, Spinner, ErrorBox, useLoad, isManagerRole, NoAccess, WeekToggle, isPaused, LAUNCH_LABEL,
   DAYS, DAY_SHIFTS, SHIFT_LABELS, SHIFT_HOURS, ALL_SLOTS, currentWeekSunday, nextWeekSunday, formatWeekRange,
-  dayOfWeekIL, addDaysKey, formatShort, formatDateTime, WEEKDAY_MORNINGS, slotChecker, loadWeekSettings, morningState,
+  dayOfWeekIL, addDaysKey, formatShort, formatDateTime, WEEKDAY_MORNINGS, slotChecker, loadWeekSettings, morningState, EXTRA_ROLES,
 } from "./lib.js";
 
 const MIN_SHIFTS = 3;
@@ -168,7 +168,10 @@ export function PublishedSchedule({ profile }) {
   // schedule entries are emails (or free-text names for people without an account)
   const isMe = (n) => n === profile.email || n === profile.full_name;
   const label = (n) => names[n] || n;
+  // one chip per person, even if they have two accounts with the same name
+  const uniq = (list) => { const seen = new Set(); return list.filter((n) => { const l = label(n); if (seen.has(l)) return false; seen.add(l); return true; }); };
   const myCount = data ? ALL_SLOTS.filter((s) => (data[s.key] || []).some(isMe)).length : 0;
+  const extrasOf = (dayKey) => Object.keys(EXTRA_ROLES).filter((r) => (data?.[`${dayKey}_${r}`] || []).length);
 
   return html`<div class="stack">
     <div class="row between wrap gap"><h2>סידור עבודה</h2><${WeekToggle} value=${week} onChange=${setWeek} /></div>
@@ -178,12 +181,17 @@ export function PublishedSchedule({ profile }) {
         <div class="note">${myCount > 0 ? html`בשבוע הזה יש לך ${myCount === 1 ? html`<b>משמרת אחת</b> — מסומנת` : html`<b>${myCount}</b> משמרות — מסומנות`} בצבע 👇` : "אין לך משמרות בשבוע זה"}</div>
         ${DAYS.map((d, i) => {
           const shifts = DAY_SHIFTS[d.key].filter((s) => (data[`${d.key}_${s}`] || []).length);
-          if (!shifts.length) return null;
+          const extras = extrasOf(d.key);
+          if (!shifts.length && !extras.length) return null;
           return html`<div class="card">
             <b>${d.label} <span class="muted small">${formatShort(addDaysKey(week, i))}</span></b>
             ${shifts.map((s) => html`<div class="mt">
               <p class="small muted">${SHIFT_LABELS[s]}</p>
-              <div class="chips">${data[`${d.key}_${s}`].map((n) => html`<span class=${"chip " + (isMe(n) ? "me" : "")}>${label(n)}</span>`)}</div>
+              <div class="chips">${uniq(data[`${d.key}_${s}`]).map((n) => html`<span class=${"chip " + (isMe(n) ? "me" : "")}>${label(n)}</span>`)}</div>
+            </div>`)}
+            ${extras.map((r) => html`<div class="mt">
+              <p class="small muted">${EXTRA_ROLES[r]}</p>
+              <div class="chips">${uniq(data[`${d.key}_${r}`]).map((n) => html`<span class=${"chip " + (isMe(n) ? "me" : "")}>${label(n)}</span>`)}</div>
             </div>`)}
           </div>`;
         })}`}
