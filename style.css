@@ -304,3 +304,21 @@ input:focus, select:focus, textarea:focus { border-color: var(--black-2); box-sh
 .shot img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; display: block; }
 .shot span { display: block; font-size: 12px; line-height: 1.3; margin-top: 4px; }
 .shot small { color: var(--muted); }
+/* published schedule: Bowling / Walter Park */
+.sched-day { padding: 0; overflow: hidden; }
+.sched-day-head { background: var(--black); color: #fff; padding: 10px 14px; font-size: 16px; }
+.sched-day-head .muted { color: #a1a1aa; }
+.sched-place { margin: 10px; border-radius: 12px; padding: 8px 10px 10px; border: 1px solid var(--line); border-inline-start: 5px solid; }
+.sched-place.bowling { border-inline-start-color: #e11d26; background: #fff7f7; }
+.sched-place.walter { border-inline-start-color: #1a12b5; background: #f5f6ff; }
+.sched-place-head { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 15px; margin-bottom: 4px; }
+.sched-place.bowling .sched-place-head { color: #b3121a; } .sched-place.walter .sched-place-head { color: #1a12b5; }
+.sched-place-head img { width: 30px; height: 30px; object-fit: contain; }
+.sched-row { display: flex; align-items: flex-start; gap: 8px; padding: 5px 0; border-top: 1px dashed rgba(0,0,0,.08); }
+.sched-place-head + .sched-row { border-top: 0; }
+.sched-label { flex: none; width: 52px; font-size: 13px; font-weight: 700; color: var(--muted); padding-top: 4px; }
+.sched-row .chips { margin-top: 0; flex: 1; }
+.my-shifts .my-shift { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 6px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.my-shifts b + .my-shift { margin-top: 6px; }
+.place-tag { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 99px; color: #fff; }
+.place-tag.bowling { background: #e11d26; } .place-tag.walter { background: #1a12b5; }

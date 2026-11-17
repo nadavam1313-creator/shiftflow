@@ -166,33 +166,51 @@ export function PublishedSchedule({ profile }) {
   }, [week]);
 
   // schedule entries are emails (or free-text names for people without an account)
-  const isMe = (n) => n === profile.email || n === profile.full_name;
+  const isMe = (n) => n === profile.email || n === profile.full_name || (!!profile.full_name && names[n] === profile.full_name);
   const label = (n) => names[n] || n;
   // one chip per person, even if they have two accounts with the same name
   const uniq = (list) => { const seen = new Set(); return list.filter((n) => { const l = label(n); if (seen.has(l)) return false; seen.add(l); return true; }); };
-  const myCount = data ? ALL_SLOTS.filter((s) => (data[s.key] || []).some(isMe)).length : 0;
-  const extrasOf = (dayKey) => Object.keys(EXTRA_ROLES).filter((r) => (data?.[`${dayKey}_${r}`] || []).length);
+  // the schedule is split by place: Bowling (shifts, kitchen, closing) and Walter Park (the Gymboree)
+  const BOWLING_ROWS = (dayKey) => [...DAY_SHIFTS[dayKey].map((s) => [s, SHIFT_LABELS[s]]), ["kitchen", "מטבח"], ["closing", "סגירה"]];
+  const listOf = (dayKey, k) => uniq(data?.[`${dayKey}_${k}`] || []);
+  const mine = [];
+  if (data) DAYS.forEach((d, i) => {
+    BOWLING_ROWS(d.key).forEach(([k, l]) => { if ((data[`${d.key}_${k}`] || []).some(isMe)) mine.push({ day: d.label, date: formatShort(addDaysKey(week, i)), place: "באולינג", what: l }); });
+    if ((data[`${d.key}_walter`] || []).some(isMe)) mine.push({ day: d.label, date: formatShort(addDaysKey(week, i)), place: "וולטר פארק", what: "" });
+  });
+  const Row = ({ dayKey, k, l }) => {
+    const list = listOf(dayKey, k);
+    if (!list.length) return null;
+    return html`<div class="sched-row"><span class="sched-label">${l}</span>
+      <div class="chips">${list.map((n) => html`<span class=${"chip " + (isMe(n) ? "me" : "")}>${label(n)}</span>`)}</div></div>`;
+  };
 
   return html`<div class="stack">
     <div class="row between wrap gap"><h2>סידור עבודה</h2><${WeekToggle} value=${week} onChange=${setWeek} /></div>
     ${loading ? html`<${Spinner} />` : error ? html`<${ErrorBox} error=${error} retry=${reload} />`
       : !data ? html`<div class="empty"><p class="huge">📅</p><p>הסידור לשבוע זה טרם פורסם</p><p class="small muted">כשהמנהלת תפרסם את הסידור הוא יופיע כאן</p></div>`
       : html`
-        <div class="note">${myCount > 0 ? html`בשבוע הזה יש לך ${myCount === 1 ? html`<b>משמרת אחת</b> — מסומנת` : html`<b>${myCount}</b> משמרות — מסומנות`} בצבע 👇` : "אין לך משמרות בשבוע זה"}</div>
+        <div class="card my-shifts">
+          <b>המשמרות שלי השבוע</b>
+          ${mine.length === 0 ? html`<p class="small muted mt">אין לך משמרות בשבוע זה</p>`
+            : mine.map((m) => html`<div class="my-shift"><b>${m.day}</b> <span class="muted">${m.date}</span>
+                <span class=${"place-tag " + (m.place === "באולינג" ? "bowling" : "walter")}>${m.place}</span>${m.what && html` <span>${m.what}</span>`}</div>`)}
+        </div>
         ${DAYS.map((d, i) => {
-          const shifts = DAY_SHIFTS[d.key].filter((s) => (data[`${d.key}_${s}`] || []).length);
-          const extras = extrasOf(d.key);
-          if (!shifts.length && !extras.length) return null;
-          return html`<div class="card">
-            <b>${d.label} <span class="muted small">${formatShort(addDaysKey(week, i))}</span></b>
-            ${shifts.map((s) => html`<div class="mt">
-              <p class="small muted">${SHIFT_LABELS[s]}</p>
-              <div class="chips">${uniq(data[`${d.key}_${s}`]).map((n) => html`<span class=${"chip " + (isMe(n) ? "me" : "")}>${label(n)}</span>`)}</div>
-            </div>`)}
-            ${extras.map((r) => html`<div class="mt">
-              <p class="small muted">${EXTRA_ROLES[r]}</p>
-              <div class="chips">${uniq(data[`${d.key}_${r}`]).map((n) => html`<span class=${"chip " + (isMe(n) ? "me" : "")}>${label(n)}</span>`)}</div>
-            </div>`)}
+          const bowl = BOWLING_ROWS(d.key).filter(([k]) => listOf(d.key, k).length);
+          const walter = listOf(d.key, "walter");
+          if (!bowl.length && !walter.length) return null;
+          return html`<div class="card sched-day">
+            <div class="sched-day-head"><b>${d.label}</b> <span class="muted small">${formatShort(addDaysKey(week, i))}</span></div>
+            ${bowl.length > 0 && html`<div class="sched-place bowling">
+              <div class="sched-place-head"><img src="logo-bowling.png" alt="" />באולינג</div>
+              ${bowl.map(([k, l]) => html`<${Row} dayKey=${d.key} k=${k} l=${l} />`)}
+            </div>`}
+            ${walter.length > 0 && html`<div class="sched-place walter">
+              <div class="sched-place-head"><img src="logo-walter.png" alt="" />וולטר פארק</div>
+              <div class="sched-row"><span class="sched-label">עובדים</span>
+                <div class="chips">${walter.map((n) => html`<span class=${"chip " + (isMe(n) ? "me" : "")}>${label(n)}</span>`)}</div></div>
+            </div>`}
           </div>`;
         })}`}
   </div>`;
