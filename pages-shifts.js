@@ -37,7 +37,8 @@ function ShiftRequestForm({ profile }) {
     setSettings(ws);
     return row;
   }, [weekStart]);
-  const isOpen = slotChecker(weekStart, settings);
+  // an employee allowed weekday mornings (e.g. the regular morning worker) can submit every shift
+  const isOpen = profile.morning_allowed ? () => true : slotChecker(weekStart, settings);
   const openMornings = WEEKDAY_MORNINGS.map((k) => ({ k, st: morningState(weekStart, k, settings) })).filter((x) => x.st.open);
   const holidayNames = [...new Set(openMornings.map((x) => x.st.auto).filter(Boolean))];
 

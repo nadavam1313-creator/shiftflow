@@ -314,7 +314,7 @@ function UsersAdmin({ profile }) {
       <div class="grow">
         <b>${p.full_name}</b> <span class=${"pill " + (isManagerRole(p.role) ? "ok" : "")}>${ROLE_LABELS[p.role]}</span>
         <p class="small muted" dir="ltr">${p.email}</p>
-        <p class="small muted">${isManagerRole(p.role) ? "רואה את כל האזורים" : `${(p.allowed_zones || []).length} אזורים`}${(p.supervise_categories || []).length && !isManagerRole(p.role) ? ` · אחמ"ש ${p.supervise_categories.join(", ")}` : ""}${p.schedule_exempt && !isManagerRole(p.role) ? " · ללא סידור קבוע" : ""} · כניסה אחרונה: ${p.last_seen ? formatDateTime(p.last_seen) : "—"}</p>
+        <p class="small muted">${isManagerRole(p.role) ? "רואה את כל האזורים" : `${(p.allowed_zones || []).length} אזורים`}${(p.supervise_categories || []).length && !isManagerRole(p.role) ? ` · אחמ"ש ${p.supervise_categories.join(", ")}` : ""}${p.schedule_exempt && !isManagerRole(p.role) ? " · ללא סידור קבוע" : ""}${p.morning_allowed && !isManagerRole(p.role) ? " · ☀️ עובדת בוקר" : ""} · כניסה אחרונה: ${p.last_seen ? formatDateTime(p.last_seen) : "—"}</p>
       </div>
       <button class="btn sm" onClick=${() => setEditing(p)}>עריכה</button>
     </div>`)}
@@ -358,12 +358,13 @@ function PersonEditor({ person, zones, me, onClose, onSaved }) {
   const [allowed, setAllowed] = useState(person.allowed_zones || []);
   const [sup, setSup] = useState(person.supervise_categories || []);
   const [exempt, setExempt] = useState(!!person.schedule_exempt);
+  const [mornings, setMornings] = useState(!!person.morning_allowed);
   const [busy, setBusy] = useState(false);
   const locked = person.role === "admin" && me.role !== "admin";
   const save = async () => {
     setBusy(true);
     try {
-      const rows = await q(sb.from("profiles").update({ full_name: name.trim(), role, allowed_zones: allowed, supervise_categories: isManagerRole(role) ? [] : sup, schedule_exempt: isManagerRole(role) ? false : exempt }).eq("id", person.id).select());
+      const rows = await q(sb.from("profiles").update({ full_name: name.trim(), role, allowed_zones: allowed, supervise_categories: isManagerRole(role) ? [] : sup, schedule_exempt: isManagerRole(role) ? false : exempt, morning_allowed: isManagerRole(role) ? false : mornings }).eq("id", person.id).select());
       if (!rows.length) throw new Error("אין הרשאה לערוך את המשתמש הזה");
       toast("נשמר ✓");
       onSaved();
@@ -374,6 +375,8 @@ function PersonEditor({ person, zones, me, onClose, onSaved }) {
       <label>שם מלא<input value=${name} onInput=${(e) => setName(e.target.value)} /></label>
       <label>תפקיד<select value=${role} onChange=${(e) => setRole(e.target.value)}>${roleOptions(me).map((r) => html`<option value=${r}>${ROLE_LABELS[r]}</option>`)}</select></label>
       ${!isManagerRole(role) && html`<p class="small muted">אזורים שהעובד רואה:</p><${ZonePicker} zones=${zones} value=${allowed} onChange=${setAllowed} />
+        <label class="check mt"><input type="checkbox" checked=${mornings} onChange=${(e) => setMornings(e.target.checked)} />
+          עובד/ת בוקר — יכול/ה להגיש גם משמרות בוקר בראשון–חמישי (שסגורות לשאר העובדים)</label>
         <label class="check mt"><input type="checkbox" checked=${exempt} onChange=${(e) => setExempt(e.target.checked)} />
           עובד ללא סידור קבוע — מגיע כמעט כל יום, הסימונים שלו לא דורשים אישור (שיתוף מיקום עדיין חובה)</label>
         <p class="small muted mt">אחמ"ש — רואה מי ביצע כל משימה ואת התמונות ב:</p>
