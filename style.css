@@ -322,3 +322,15 @@ input:focus, select:focus, textarea:focus { border-color: var(--black-2); box-sh
 .my-shifts b + .my-shift { margin-top: 6px; }
 .place-tag { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 99px; color: #fff; }
 .place-tag.bowling { background: #e11d26; } .place-tag.walter { background: #1a12b5; }
+.shift-block { border-radius: 10px; padding: 8px 10px; margin-top: 8px; background: #fff; border: 1px solid var(--line); }
+.shift-block.morning { background: #fffbeb; border-color: #fde68a; }
+.shift-block.evening, .shift-block.night { background: #1c1c20; border-color: #1c1c20; color: #fff; }
+.shift-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-weight: 800; font-size: 14px; margin-bottom: 6px; }
+.shift-block.morning .shift-head { color: #92400e; }
+.shift-head small { font-weight: 500; font-size: 12px; opacity: .75; }
+.shift-block.evening .chip, .shift-block.night .chip { background: #34343a; color: #fff; }
+.shift-block.evening .chip.me, .shift-block.night .chip.me { background: #e11d26; }
+.shift-block .sched-row { border-top: 1px dashed rgba(255,255,255,.18); margin-top: 6px; padding-top: 6px; }
+.shift-block.evening .sched-label, .shift-block.night .sched-label { color: #d4d4d8; }
+.sched-place.bowling > .sched-row { margin-top: 8px; border-top: 0; }
+.sched-label { width: 72px; white-space: nowrap; }

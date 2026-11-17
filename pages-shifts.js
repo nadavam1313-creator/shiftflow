@@ -171,6 +171,7 @@ export function PublishedSchedule({ profile }) {
   // one chip per person, even if they have two accounts with the same name
   const uniq = (list) => { const seen = new Set(); return list.filter((n) => { const l = label(n); if (seen.has(l)) return false; seen.add(l); return true; }); };
   // the schedule is split by place: Bowling (shifts, kitchen, closing) and Walter Park (the Gymboree)
+  const SHIFT_ICON = { morning: "☀️", evening: "🌙", night: "🌙" };
   const BOWLING_ROWS = (dayKey) => [...DAY_SHIFTS[dayKey].map((s) => [s, SHIFT_LABELS[s]]), ["kitchen", "מטבח"], ["closing", "סגירה"]];
   const listOf = (dayKey, k) => uniq(data?.[`${dayKey}_${k}`] || []);
   const mine = [];
@@ -204,7 +205,18 @@ export function PublishedSchedule({ profile }) {
             <div class="sched-day-head"><b>${d.label}</b> <span class="muted small">${formatShort(addDaysKey(week, i))}</span></div>
             ${bowl.length > 0 && html`<div class="sched-place bowling">
               <div class="sched-place-head"><img src="logo-bowling.png" alt="" />באולינג</div>
-              ${bowl.map(([k, l]) => html`<${Row} dayKey=${d.key} k=${k} l=${l} />`)}
+              ${DAY_SHIFTS[d.key].map((sh, si, arr) => {
+                const people = listOf(d.key, sh);
+                const closing = si === arr.length - 1 ? listOf(d.key, "closing") : [];
+                if (!people.length && !closing.length) return null;
+                return html`<div class=${"shift-block " + sh}>
+                  <div class="shift-head"><span>${SHIFT_ICON[sh]} ${SHIFT_LABELS[sh]}</span><small>${SHIFT_HOURS[sh]}</small></div>
+                  ${people.length > 0 && html`<div class="chips">${people.map((n) => html`<span class=${"chip " + (isMe(n) ? "me" : "")}>${label(n)}</span>`)}</div>`}
+                  ${closing.length > 0 && html`<div class="sched-row"><span class="sched-label">🔒 סגירה</span>
+                    <div class="chips">${closing.map((n) => html`<span class=${"chip " + (isMe(n) ? "me" : "")}>${label(n)}</span>`)}</div></div>`}
+                </div>`;
+              })}
+              <${Row} dayKey=${d.key} k="kitchen" l="🍳 מטבח" />
             </div>`}
             ${walter.length > 0 && html`<div class="sched-place walter">
               <div class="sched-place-head"><img src="logo-walter.png" alt="" />וולטר פארק</div>
