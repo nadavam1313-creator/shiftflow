@@ -344,3 +344,23 @@ input:focus, select:focus, textarea:focus { border-color: var(--black-2); box-sh
 .slot-block.extra { border-inline-start: 4px solid; padding-inline-start: 8px; border-top-style: solid; }
 .slot-block.extra.bowling { border-inline-start-color: #e11d26; }
 .slot-block.extra.walter { border-inline-start-color: #1a12b5; }
+/* schedule editor: tap a person, choose the place */
+.ed-day-head { font-size: 16px; }
+.ed-people { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; margin-top: 6px; }
+.ed-person { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: start; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: #fff; min-height: 52px; cursor: pointer; }
+.ed-person .ed-name { font-weight: 700; font-size: 14px; }
+.ed-person small { color: var(--muted); font-size: 12px; line-height: 1.3; }
+.ed-person.placed { background: var(--black-2); border-color: var(--black-2); color: #fff; }
+.ed-person.placed small { color: #fca5a5; }
+.ed-person.other { border-style: dashed; color: var(--muted); }
+.ed-place { margin-top: 10px; border-radius: 10px; padding: 8px 10px; border-inline-start: 4px solid; background: #fafafa; }
+.ed-place.bowling { border-inline-start-color: #e11d26; } .ed-place.walter { border-inline-start-color: #1a12b5; }
+.place-pick { margin-top: 12px; border-radius: 12px; padding: 10px; border: 1px solid var(--line); border-inline-start: 5px solid; }
+.place-pick.bowling { border-inline-start-color: #e11d26; background: #fff7f7; }
+.place-pick.walter { border-inline-start-color: #1a12b5; background: #f5f6ff; }
+.place-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.place-opt { padding: 12px 8px; border-radius: 10px; border: 1px solid var(--line); background: #fff; font-weight: 700; font-size: 15px; min-height: 48px; cursor: pointer; }
+.place-opt small { display: block; font-weight: 500; font-size: 11px; color: var(--ok); }
+.place-pick.bowling .place-opt.on { background: #e11d26; border-color: #e11d26; color: #fff; }
+.place-pick.walter .place-opt.on { background: #1a12b5; border-color: #1a12b5; color: #fff; }
+.place-opt.on small { color: #fff; }

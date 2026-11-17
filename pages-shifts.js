@@ -2,7 +2,7 @@
 import {
   html, useState, useEffect, useRef, sb, q, toast, Spinner, ErrorBox, useLoad, isManagerRole, NoAccess, WeekToggle, isPaused, LAUNCH_LABEL,
   DAYS, DAY_SHIFTS, SHIFT_LABELS, SHIFT_HOURS, ALL_SLOTS, currentWeekSunday, nextWeekSunday, formatWeekRange,
-  dayOfWeekIL, addDaysKey, formatShort, formatDateTime, WEEKDAY_MORNINGS, slotChecker, loadWeekSettings, morningState, EXTRA_ROLES, holidayFor,
+  dayOfWeekIL, addDaysKey, formatShort, formatDateTime, WEEKDAY_MORNINGS, slotChecker, loadWeekSettings, morningState, EXTRA_ROLES, holidayFor, Modal,
 } from "./lib.js";
 
 const MIN_SHIFTS = 3;
@@ -355,6 +355,7 @@ export function ScheduleEditor({ profile }) {
   const [adding, setAdding] = useState(null);
   const [manual, setManual] = useState("");
   const inputRef = useRef(null);
+  const [placing, setPlacing] = useState(null); // { i: day index, who } — the "where to place" window
 
   const { loading, error, data, reload, setData } = useLoad(async () => {
     const [subs, pub, people, settings] = await Promise.all([
@@ -426,6 +427,21 @@ export function ScheduleEditor({ profile }) {
     if (typed) add(key, byName[typed] || typed);
     setManual(""); setAdding(null);
   };
+  // every place a person can be put on a given day: Bowling shifts + kitchen + closing, Walter Park (morning/evening on holidays)
+  const placesFor = (dayKey, i) => {
+    const holiday = !!holidayFor(addDaysKey(week, i));
+    const has = (k) => (schedule[`${dayKey}_${k}`] || []).length > 0;
+    const icon = { morning: "☀️", evening: "🌙", night: "🌙" };
+    const list = DAY_SHIFTS[dayKey].map((sh) => ({ key: `${dayKey}_${sh}`, group: "bowling", shift: sh, label: `${icon[sh]} ${SHIFT_LABELS[sh]}`, short: `באולינג ${SHIFT_LABELS[sh]}` }));
+    list.push({ key: `${dayKey}_kitchen`, group: "bowling", label: "🍳 מטבח", short: "מטבח" });
+    list.push({ key: `${dayKey}_closing`, group: "bowling", label: "🔒 סגירה", short: "סגירה" });
+    if (holiday || has("walter_morning") || has("walter_evening")) {
+      list.push({ key: `${dayKey}_walter_morning`, group: "walter", label: "☀️ בוקר", short: "וולטר בוקר" });
+      list.push({ key: `${dayKey}_walter_evening`, group: "walter", label: "🌙 ערב", short: "וולטר ערב" });
+    }
+    if (!holiday || has("walter")) list.push({ key: `${dayKey}_walter`, group: "walter", label: holiday ? "כל היום" : "🐙 וולטר", short: "וולטר" });
+    return list;
+  };
   // extra groups of the schedule sheet: kitchen + closing (Bowling), Walter Park — on holidays/vacations Walter has morning & evening
   const EXTRA_TITLES = { kitchen: "🍳 מטבח · באולינג", closing: "🔒 סגירה · באולינג", walter: "🐙 וולטר פארק", walter_morning: "🐙 וולטר פארק · ☀️ בוקר", walter_evening: "🐙 וולטר פארק · 🌙 ערב" };
   const extraRolesFor = (dayKey, i) => {
@@ -465,41 +481,73 @@ export function ScheduleEditor({ profile }) {
       <button class="link small" disabled=${saving} onClick=${() => persist(false)}>הסתר מהעובדים</button></div>`}
     ${subs.length === 0 && html`<div class="note warn">⚠️ אין הגשות לשבוע זה — ניתן לשבץ עובדים ידנית.</div>`}
 
-    ${DAYS.map((d, i) => html`<div class="card">
-      <b>${d.label} <span class="muted small">${formatShort(addDaysKey(week, i))}</span>
-        ${holidayFor(addDaysKey(week, i)) && html` <span class="pill ok">${holidayFor(addDaysKey(week, i))}</span>`}</b>
-      ${[...DAY_SHIFTS[d.key], ...extraRolesFor(d.key, i)].map((s) => {
-        const key = `${d.key}_${s}`;
-        if (EXTRA_ROLES[s]) return ExtraGroup({ k: key, title: EXTRA_TITLES[s], cls: s.startsWith("walter") ? "walter" : "bowling" }); // plain call keeps input focus
-        const selected = schedule[key] || [];
-        const avail = subs.filter((x) => x.availability?.[key] && !selected.includes(keyOf(x)));
-        return html`<div class="slot-block">
-          <p class="small muted">${SHIFT_LABELS[s]} · ${selected.length} משובצים
-            ${!slotChecker(week, data.settings)(key) && html`<span class="pill">סגור להגשה — שיבוץ ידני</span>`}
-            ${WEEKDAY_MORNINGS.includes(key) && morningState(week, key, data.settings).auto && html`<span class="pill ok">${morningState(week, key, data.settings).auto}</span>`}</p>
-          ${selected.length > 0 && html`<div class="chips">${selected.map((n) => html`<span class="chip sel">✓ ${label(n)}<button onClick=${() => remove(key, n)}>✕</button></span>`)}</div>`}
-          ${avail.map((x) => {
-            const c = clash(d.key, s, keyOf(x));
-            return html`<button class="pick" onClick=${() => add(key, keyOf(x))}>
-              <span>+</span>
-              <div class="grow">
-                <span>${label(keyOf(x))} <small class="muted">(${countFor(keyOf(x))} משמרות)</small></span>
-                ${x.slot_notes?.[key] && html`<small class="note-line">💬 ${x.slot_notes[key]}</small>`}
-                ${c.length > 0 && html`<small class="warn-text">⚠️ כבר משובץ ב${c.map((y) => SHIFT_LABELS[y]).join(", ")}</small>`}
-              </div>
+    <p class="small muted">👆 לחצו על עובד כדי לבחור איפה לשבץ אותו — באולינג או וולטר פארק, בוקר או ערב.</p>
+    ${DAYS.map((d, i) => {
+      const dayKeys = placesFor(d.key, i).map((pl) => pl.key);
+      // who submitted availability for this day (any shift), plus anyone already placed
+      const availToday = subs.filter((x) => DAY_SHIFTS[d.key].some((sh) => x.availability?.[`${d.key}_${sh}`])).map(keyOf);
+      const placedToday = [...new Set(dayKeys.flatMap((k) => schedule[k] || []))];
+      const people = [...new Set([...availToday, ...placedToday])];
+      const placesOf = (who) => placesFor(d.key, i).filter((pl) => (schedule[pl.key] || []).includes(who));
+      const groups = [["bowling", "🎳 באולינג"], ["walter", "🐙 וולטר פארק"]];
+      return html`<div class="card ed-day">
+        <div class="ed-day-head"><b>${d.label}</b> <span class="muted small">${formatShort(addDaysKey(week, i))}</span>
+          ${holidayFor(addDaysKey(week, i)) && html` <span class="pill ok">${holidayFor(addDaysKey(week, i))}</span>`}</div>
+
+        <p class="small muted mt">זמינים היום (${availToday.length}):</p>
+        <div class="ed-people">
+          ${people.map((who) => {
+            const sub = subs.find((x) => keyOf(x) === who);
+            const am = DAY_SHIFTS[d.key].includes("morning") && sub?.availability?.[`${d.key}_morning`];
+            const pm = DAY_SHIFTS[d.key].some((sh) => sh !== "morning" && sub?.availability?.[`${d.key}_${sh}`]);
+            const note = DAY_SHIFTS[d.key].map((sh) => sub?.slot_notes?.[`${d.key}_${sh}`]).filter(Boolean)[0];
+            const pls = placesOf(who);
+            return html`<button class=${"ed-person " + (pls.length ? "placed" : "")} onClick=${() => setPlacing({ i, who })}>
+              <span class="ed-name">${label(who)}${note ? " 💬" : ""}</span>
+              <small>${pls.length ? pls.map((pl) => pl.short).join(" · ") : [am && "☀️ בוקר", pm && "🌙 ערב"].filter(Boolean).join(" ") || "לא הגיש"}</small>
             </button>`;
           })}
-          ${adding === key
-            ? html`<div class="row gap mt">
-                <input ref=${inputRef} list="people" value=${manual} placeholder="שם עובד..." onInput=${(e) => setManual(e.target.value)}
-                  onKeyDown=${(e) => { if (e.key === "Enter") addManual(key); if (e.key === "Escape") setAdding(null); }} />
-                <button class="btn sm primary" onClick=${() => addManual(key)}>הוסף</button>
-                <button class="btn sm" onClick=${() => setAdding(null)}>ביטול</button>
-              </div>`
-            : html`<button class="link small" onClick=${() => { setAdding(key); setManual(""); }}>+ הוסף ידנית</button>`}
-        </div>`;
-      })}
-    </div>`)}
+          <button class="ed-person other" onClick=${() => { setAdding(`day_${i}`); setManual(""); }}><span class="ed-name">+ עובד אחר</span><small>שיבוץ ידני</small></button>
+        </div>
+        ${adding === `day_${i}` && html`<div class="row gap mt">
+          <input ref=${inputRef} list="people" value=${manual} placeholder="שם עובד..." onInput=${(e) => setManual(e.target.value)}
+            onKeyDown=${(e) => { if (e.key === "Enter" && manual.trim()) { setPlacing({ i, who: byName[manual.trim()] || manual.trim() }); setAdding(null); } if (e.key === "Escape") setAdding(null); }} />
+          <button class="btn sm primary" onClick=${() => { if (manual.trim()) setPlacing({ i, who: byName[manual.trim()] || manual.trim() }); setAdding(null); }}>בחר</button>
+          <button class="btn sm" onClick=${() => setAdding(null)}>ביטול</button>
+        </div>`}
+
+        ${groups.map(([g, title]) => {
+          const pls = placesFor(d.key, i).filter((pl) => pl.group === g && (schedule[pl.key] || []).length);
+          if (!pls.length) return null;
+          return html`<div class=${"ed-place " + g}><b class="small">${title}</b>
+            ${pls.map((pl) => html`<div class="sched-row"><span class="sched-label">${pl.label}</span>
+              <div class="chips">${(schedule[pl.key] || []).map((n) => html`<span class="chip sel">${label(n)}<button title="הסר" onClick=${() => remove(pl.key, n)}>✕</button></span>`)}</div></div>`)}
+          </div>`;
+        })}
+      </div>`;
+    })}
+
+    ${placing && (() => {
+      const d = DAYS[placing.i];
+      const who = placing.who;
+      const sub = subs.find((x) => keyOf(x) === who);
+      const notes = DAY_SHIFTS[d.key].map((sh) => sub?.slot_notes?.[`${d.key}_${sh}`] && `${SHIFT_LABELS[sh]}: ${sub.slot_notes[`${d.key}_${sh}`]}`).filter(Boolean);
+      const availFor = (pl) => pl.shift && sub?.availability?.[`${d.key}_${pl.shift}`];
+      return html`<${Modal} title=${`איפה לשבץ את ${label(who)}?`} onClose=${() => setPlacing(null)}>
+        <p class="muted small">${d.label} ${formatShort(addDaysKey(week, placing.i))}${sub ? "" : " · לא הגיש זמינות"}</p>
+        ${notes.map((n) => html`<p class="note-line small">💬 ${n}</p>`)}
+        ${[["bowling", "🎳 באולינג"], ["walter", "🐙 וולטר פארק"]].map(([g, title]) => html`<div class=${"place-pick " + g}>
+          <b>${title}</b>
+          <div class="place-opts">${placesFor(d.key, placing.i).filter((pl) => pl.group === g).map((pl) => {
+            const on = (schedule[pl.key] || []).includes(who);
+            return html`<button class=${"place-opt " + (on ? "on" : "")} onClick=${() => (on ? remove(pl.key, who) : add(pl.key, who))}>
+              ${on ? "✓ " : ""}${pl.label}${availFor(pl) ? html` <small>זמין</small>` : ""}
+            </button>`;
+          })}</div>
+        </div>`)}
+        <button class="btn primary wide mt" onClick=${() => setPlacing(null)}>סיום</button>
+      <//>`;
+    })()}
     <datalist id="people">${people.map((p) => html`<option value=${p.full_name || p.email} />`)}</datalist>
   </div>`;
 }
