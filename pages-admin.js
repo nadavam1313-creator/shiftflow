@@ -58,12 +58,11 @@ export function Leaderboard({ profile }) {
           : !mgr && html`<div class="note">עוד אין לך נקודות החודש — כל משימה שמסמנים מוסיפה נקודות 💪</div>`}
         <div class="card" style="padding:0;overflow:hidden">
           <table class="board">
-            <thead><tr><th>מקום</th><th>עובד</th><th>נקודות</th><th>פער מהמקום הראשון</th>${admin && html`<th>פרס</th>`}</tr></thead>
+            <thead><tr><th>מקום</th><th>עובד</th><th>נקודות</th>${admin && html`<th>פרס</th>`}</tr></thead>
             <tbody>${board.map((e) => html`<tr class=${(e.email === profile.email ? "me " : "") + (Number(e.rank) === 1 ? "first" : "")}>
               <td class="rank-cell">${["🥇", "🥈", "🥉"][Number(e.rank) - 1] || e.rank}</td>
               <td><b>${e.name}</b>${e.email === profile.email && html` <span class="pill">את/ה</span>`}</td>
               <td><b>${e.points}</b></td>
-              <td class="muted">${Number(e.rank) === 1 ? "—" : `-${Number(board[0].points) - Number(e.points)}`}</td>
               ${admin && html`<td>${Number(e.rank) <= 2 ? html`<span class="pill gold">₪${Number(e.rank) === 1 ? first : second}</span>` : ""}</td>`}
             </tr>`)}</tbody>
           </table>
