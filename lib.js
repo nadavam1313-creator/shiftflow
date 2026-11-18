@@ -11,6 +11,11 @@ export { render, useState, useEffect, useMemo, useRef, useCallback, CATEGORIES }
 export const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { persistSession: true, autoRefreshToken: true, flowType: "pkce", detectSessionInUrl: true },
 });
+// password-reset links must work in ANY browser (the email often opens in Gmail / another browser than the app),
+// so they use the "implicit" link style instead of the browser-bound PKCE one
+export const sbLink = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { flowType: "implicit", persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: "sf-link" },
+});
 
 // Run a supabase query and throw on error
 export async function q(promise) {

@@ -1,8 +1,15 @@
 // ShiftFlow — app shell: auth, layout, routing
 import {
   html, render, useState, useEffect, sb, q, toast, onToast, Spinner, isManagerRole, ROLE_LABELS, isPaused, LAUNCH_LABEL,
-  todayIL, shiftPhaseNow,
+  todayIL, shiftPhaseNow, sbLink,
 } from "./lib.js";
+
+// tokens (or an error) that a password-reset email link puts in the address — read once, then cleaned from the address bar
+const LINK_PARAMS = new URLSearchParams(location.hash.replace(/^#/, ""));
+const LINK_TOKENS = LINK_PARAMS.get("access_token") && LINK_PARAMS.get("refresh_token")
+  ? { access_token: LINK_PARAMS.get("access_token"), refresh_token: LINK_PARAMS.get("refresh_token") } : null;
+const LINK_ERROR = !LINK_TOKENS && LINK_PARAMS.get("error_code");
+if (LINK_TOKENS || LINK_ERROR) history.replaceState(null, "", location.pathname + location.search + (LINK_TOKENS ? "#/reset" : "#/"));
 import { Home, Category, ZoneTasks, History } from "./pages-tasks.js";
 import { InstallCard } from "./install.js";
 import { ShiftRequest, PublishedSchedule, ShiftManager, ScheduleEditor } from "./pages-shifts.js";
@@ -129,7 +136,7 @@ function AuthScreen() {
         if (error) throw new Error(error.message.includes("registered") ? "האימייל הזה כבר רשום — נסה להתחבר" : error.message);
         if (!data.session) setMsg({ ok: true, text: "נרשמת! בדוק את המייל כדי לאשר את החשבון, ואז התחבר." });
       } else {
-        const { error } = await sb.auth.resetPasswordForEmail(email.trim(), {
+        const { error } = await sbLink.auth.resetPasswordForEmail(email.trim(), {
           redirectTo: location.origin + location.pathname,
         });
         if (error) throw error;
@@ -244,6 +251,16 @@ function App() {
   const [profileLoading, setProfileLoading] = useState(true);
 
   useEffect(() => {
+    // arriving from a password-reset email: sign in with the link's tokens, then show "choose a new password"
+    if (LINK_TOKENS) {
+      sb.auth.setSession(LINK_TOKENS).then(({ data, error }) => {
+        if (error) return toast("הקישור לא תקין או שפג תוקפו — בקשו קישור חדש ב\"שכחתי סיסמה\"", "bad");
+        setSession(data.session);
+        location.hash = "#/reset";
+      });
+    } else if (LINK_ERROR) {
+      setTimeout(() => toast("הקישור מהמייל פג תוקף או כבר נוצל — בקשו קישור חדש ב\"שכחתי סיסמה\"", "bad"), 500);
+    }
     sb.auth.getSession().then(({ data }) => setSession(data.session));
     const { data } = sb.auth.onAuthStateChange((event, s) => {
       setSession(s);
