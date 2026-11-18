@@ -51,7 +51,9 @@ function ShiftRequestForm({ profile }) {
   }, [existing]);
 
   const count = Object.entries(avail).filter(([k, v]) => v && isOpen(k)).length;
-  const hasWeekend = WEEKEND_SLOTS.some((k) => avail[k] && isOpen(k));
+  // the shift manager (Michal) is the only one who may submit without a weekend shift
+  const weekendFree = isManagerRole(profile.role);
+  const hasWeekend = weekendFree || WEEKEND_SLOTS.some((k) => avail[k] && isOpen(k));
 
   const submit = async () => {
     if (count < MIN_SHIFTS) return toast(`יש לבחור לפחות ${MIN_SHIFTS} משמרות (בחרת ${count})`, "bad");
@@ -113,7 +115,7 @@ function ShiftRequestForm({ profile }) {
     </div>`}
     ${existing && !locked && html`<div class="note ok">✓ המנהלת פתחה לך את ההגשה לעריכה — אפשר לעדכן</div>`}
 
-    ${!locked && html`<div class="note small">📌 לפחות ${MIN_SHIFTS} משמרות, ומהן <b>לפחות אחת בסופ״ש</b> (חמישי, שישי או מוצ״ש). רוצים לצאת מוקדם או להגיע מאוחר? לחצו על 💬 ליד המשמרת וכתבו הערה — ${MANAGER_NAME} תחליט על השיבוץ. ההגשה נסגרת בסוף יום רביעי.</div>`}
+    ${!locked && html`<div class="note small">📌 לפחות ${MIN_SHIFTS} משמרות${weekendFree ? "" : html`, ומהן <b>לפחות אחת בסופ״ש</b> (חמישי, שישי או מוצ״ש)`}. רוצים לצאת מוקדם או להגיע מאוחר? לחצו על 💬 ליד המשמרת וכתבו הערה — ${MANAGER_NAME} תחליט על השיבוץ. ההגשה נסגרת בסוף יום רביעי.</div>`}
     ${openMornings.length > 0 && html`<div class="note ok">☀️ השבוע אפשר להגיש גם משמרות בוקר${holidayNames.length ? ` (${holidayNames.join(", ")})` : ""}</div>`}
     ${DAYS.map((d, i) => {
       const shifts = DAY_SHIFTS[d.key].filter((s) => isOpen(`${d.key}_${s}`));
