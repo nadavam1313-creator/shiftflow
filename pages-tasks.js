@@ -140,6 +140,7 @@ export function ZoneTasks({ profile, zoneId }) {
     </div>
     ${tasks.length > 0 && html`<div class="bar"><div style=${`width:${(doneCount / tasks.length) * 100}%`} class=${doneCount === tasks.length ? "full" : ""}></div></div>`}
     <div class="tabs">${PHASES.map((p) => html`<button class=${p === activePhase ? "on" : ""} onClick=${() => setPhase(p)}>${p}</button>`)}</div>
+    ${phaseTasks.some((t) => t.requires_photo && (t.extra?.photo_count || 1) > 1) && html`<div class="note small">📸 <b>משימות עם כמה תמונות:</b> צריך לצלם תמונות <b>שונות</b> — כל תמונה ממקום או פריט אחר. למשל: בהחלפת פחים מצלמים כל פח בנפרד, ברב מרחב מצלמים כמה אזורים שונים במתקן. המשימה נחשבת כבוצעה רק אחרי שצולמו כל התמונות.</div>`}
     ${phaseTasks.length === 0
       ? html`<div class="empty"><p>אין משימות לשלב זה</p></div>`
       : phaseTasks.map((t) => {
@@ -155,6 +156,12 @@ function TaskItem({ task, completion, lockedByOther, paused, who, onUpdate }) {
   const [lightbox, setLightbox] = useState(false);
   const status = completion?.status;
   const photo = safeUrl(completion?.photo_url);
+  const photos = (completion?.photo_urls?.length ? completion.photo_urls : completion?.photo_url ? [completion.photo_url] : []).map(safeUrl).filter(Boolean);
+  // how many different photos this task needs (set per task); photos taken so far are kept on the phone until all are in
+  const need = task.requires_photo ? Math.max(1, Number(task.extra?.photo_count) || 1) : 0;
+  const pendKey = `sf-shots-${task.id}-${todayIL()}`;
+  const [pending, setPending] = useState(() => { try { return JSON.parse(localStorage.getItem(pendKey) || "[]"); } catch { return []; } });
+  const savePending = (list) => { setPending(list); try { list.length ? localStorage.setItem(pendKey, JSON.stringify(list)) : localStorage.removeItem(pendKey); } catch {} };
   // optional second way to complete a task, e.g. "checked — nothing to refill" (set per task by the manager)
   const altLabel = (task.extra?.alt_done_label || "").trim();
   const altPoints = Math.round((task.points || 0) / 2); // the alternative marking is worth half the points
@@ -183,7 +190,18 @@ function TaskItem({ task, completion, lockedByOther, paused, who, onUpdate }) {
       const { error } = await sb.storage.from("task-photos").upload(path, small, { contentType: isJpeg ? "image/jpeg" : file.type });
       if (error) throw error;
       const url = sb.storage.from("task-photos").getPublicUrl(path).data.publicUrl;
-      const ok = await onUpdate({ status: "done", photo_url: url, notes: null, alt_done: false });
+      if (need > 1) {
+        const list = [...pending, url];
+        if (list.length < need) {
+          savePending(list);
+          toast(`תמונה ${list.length} מתוך ${need} נשמרה — צלמו עוד ${need - list.length} במקום אחר`);
+          return;
+        }
+        const ok = await onUpdate({ status: "done", photo_url: list[0], photo_urls: list, notes: null, alt_done: false });
+        if (ok !== false) { savePending([]); toast(`כל ${need} התמונות נשמרו — המשימה סומנה כבוצעה ✓`); }
+        return;
+      }
+      const ok = await onUpdate({ status: "done", photo_url: url, photo_urls: [url], notes: null, alt_done: false });
       if (ok !== false) toast("התמונה נשמרה — המשימה סומנה כבוצעה ✓");
     } catch (e) {
       toast("העלאת התמונה נכשלה: " + e.message, "bad");
@@ -203,7 +221,7 @@ function TaskItem({ task, completion, lockedByOther, paused, who, onUpdate }) {
       </div>
       <div class="stack-xs">
         <span class="pill">${task.points} נק׳</span>
-        ${task.requires_photo && html`<span class="pill warn">📷 חובה</span>`}
+        ${task.requires_photo && html`<span class="pill warn">📷 ${need > 1 ? `${need} תמונות` : "חובה"}</span>`}
       </div>
     </div>
     ${paused
@@ -212,16 +230,21 @@ function TaskItem({ task, completion, lockedByOther, paused, who, onUpdate }) {
       ? html`<p class="small muted" style="margin-top:8px">🔒 סומן ע״י עובד אחר</p>`
       : html`<div class="row gap wrap" style="margin-top:8px">
           ${task.requires_photo
-            ? html`<label class=${"btn sm ok" + (busy ? " busy" : "")}>${busy ? "מעלה…" : "📷 בוצע — צלם"}<input type="file" accept="image/*" capture="environment" hidden disabled=${busy} onChange=${(e) => uploadPhoto(e.target)} /></label>`
+            ? html`<label class=${"btn sm ok" + (busy ? " busy" : "")}>${busy ? "מעלה…" : need > 1 ? `📷 צלם ${Math.min(pending.length + 1, need)} מתוך ${need}` : "📷 בוצע — צלם"}<input type="file" accept="image/*" capture="environment" hidden disabled=${busy} onChange=${(e) => uploadPhoto(e.target)} /></label>`
             : html`<button class="btn sm ok" disabled=${busy} onClick=${() => mark("done", { notes: null, alt_done: false })}>✓ בוצע</button>`}
           <button class="btn sm" disabled=${busy} onClick=${() => mark("not_done", { notes: null, alt_done: false })}>✗ לא בוצע</button>
           ${!task.requires_photo && html`<label class=${"btn sm" + (busy ? " busy" : "")}>${busy ? "מעלה…" : "📷 תמונה"}<input type="file" accept="image/*" capture="environment" hidden onChange=${(e) => uploadPhoto(e.target)} /></label>`}
-          ${photo && html`<img class="thumb" src=${photo} onClick=${() => setLightbox(true)} />`}
+          ${photos.map((ph) => html`<img class="thumb" src=${ph} onClick=${() => setLightbox(ph)} />`)}
           ${altLabel && html`<button class=${"btn sm wide alt-done" + (completion?.alt_done ? " on" : "")} disabled=${busy}
             onClick=${() => mark("done", { notes: altLabel, alt_done: true })}>☑️ ${altLabel} <span class="muted">(${altPoints} נק׳)</span></button>`}
         </div>`}
-    ${lockedByOther && photo && html`<img class="thumb mt" src=${photo} onClick=${() => setLightbox(true)} />`}
-    ${lightbox && html`<div class="lightbox" onClick=${() => setLightbox(false)}><img src=${photo} /></div>`}
+    ${need > 1 && !paused && !lockedByOther && status !== "done" && html`<div class="shots">
+      <p class="small">📸 צריך <b>${need} תמונות שונות</b> — כל אחת ממקום או פריט אחר${pending.length ? ` · צולמו ${pending.length}` : ""}</p>
+      ${pending.length > 0 && html`<div class="row gap wrap">${pending.map((u, i) => html`<span class="shot-pend"><img class="thumb" src=${safeUrl(u)} onClick=${() => setLightbox(safeUrl(u))} />
+        <button class="icon-btn" title="צלם מחדש" onClick=${() => savePending(pending.filter((_, j) => j !== i))}>✕</button></span>`)}</div>`}
+    </div>`}
+    ${lockedByOther && photos.length > 0 && html`<div class="row gap wrap mt">${photos.map((ph) => html`<img class="thumb" src=${ph} onClick=${() => setLightbox(ph)} />`)}</div>`}
+    ${lightbox && html`<div class="lightbox" onClick=${() => setLightbox(false)}><img src=${lightbox === true ? photo : lightbox} /></div>`}
   </div>`;
 }
 

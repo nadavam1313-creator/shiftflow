@@ -126,7 +126,7 @@ function CompletionsBoard({ date, cats = CATEGORIES, canReview = false, me = "" 
     const dayIdx = parseKey(date).getDay();
     const [allZones, allTasks, allComps, people, sched] = await Promise.all([
       q(sb.from("zones").select("*").order("category").order("sort_order")),
-      q(sb.from("tasks").select("id,zone_id,title,shift_phases,requires_photo")),
+      q(sb.from("tasks").select("id,zone_id,title,shift_phases,requires_photo,extra")),
       q(sb.from("task_completions").select("*").eq("shift_date", date)),
       q(sb.from("profiles").select("email,full_name")),
       q(sb.from("published_schedules").select("schedule").eq("week_start", addDaysKey(date, -dayIdx)).eq("is_published", true).maybeSingle()),
@@ -175,7 +175,8 @@ function CompletionsBoard({ date, cats = CATEGORIES, canReview = false, me = "" 
     </div>
     ${(() => {
       // every photo taken on this day, in one place (tap to enlarge)
-      const shots = comps.filter((c) => safeUrl(c.photo_url)).sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
+      const shots = comps.flatMap((c) => (c.photo_urls?.length ? c.photo_urls : c.photo_url ? [c.photo_url] : []).filter((u) => safeUrl(u)).map((u) => ({ ...c, photo_url: u })))
+        .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
       const taskName = (id) => tasks.find((t) => t.id === id)?.title || "";
       return html`<div class="card">
         <b>📷 תמונות מהיום (${shots.length})</b>
@@ -219,18 +220,20 @@ function CompletionsBoard({ date, cats = CATEGORIES, canReview = false, me = "" 
             if (!pt.length) return null;
             return html`<p class="small muted mt">${p}</p>${pt.map((t) => {
               const c = comps.find((x) => x.task_id === t.id && x.shift_phase === p) || comps.find((x) => x.task_id === t.id && !PHASES.includes(x.shift_phase));
-              const ph = safeUrl(c?.photo_url);
-              const missingPhoto = c?.status === "done" && t.requires_photo && !ph && !c.alt_done;
+              const phs = (c?.photo_urls?.length ? c.photo_urls : c?.photo_url ? [c.photo_url] : []).map(safeUrl).filter(Boolean);
+              const ph = phs[0];
+              const needN = t.requires_photo ? Math.max(1, Number(t.extra?.photo_count) || 1) : 0;
+              const missingPhoto = c?.status === "done" && needN > 0 && phs.length < needN && !c.alt_done;
               return html`<div class="board-row small">
                 <span>${missingPhoto ? "⚠️" : c?.status === "done" ? "✅" : c?.status === "not_done" ? "❌" : "⬜"}</span>
                 <div class="grow">
                   <span>${t.title}</span>
-                  ${c && html`<div class="muted">${who(c.completed_by)} · ${formatTime(c.updated_at)}${missingPhoto ? " · חסרה תמונה" : ""}</div>`}
+                  ${c && html`<div class="muted">${who(c.completed_by)} · ${formatTime(c.updated_at)}${missingPhoto ? ` · חסרות תמונות (${phs.length}/${needN})` : ""}</div>`}
                   ${c && offShift(c) && html`<div class="warn-text">🚩 ${offShift(c)} · ${reviewLabel(c)}</div>`}
                   ${c?.distance_m != null && html`<div class=${c.distance_m > 300 ? "warn-text" : "muted"}>📍 ${c.distance_m > 300 ? "🚩 " : ""}${c.distance_m < 1000 ? c.distance_m + " מ׳" : (c.distance_m / 1000).toFixed(1) + " ק״מ"} מהפארק</div>`}
                   ${c?.notes && html`<div class="note-line">📝 ${c.notes}</div>`}
                 </div>
-                ${ph && html`<img class="thumb" src=${ph} loading="lazy" onClick=${() => setLightbox(ph)} />`}
+                ${phs.length > 0 && html`<div class="thumbs">${phs.map((u) => html`<img class="thumb" src=${u} loading="lazy" onClick=${() => setLightbox(u)} />`)}</div>`}
               </div>`;
             })}`;
           })}</div>`}
@@ -511,14 +514,14 @@ function TasksAdmin() {
     <button class="btn primary" onClick=${() => setEdit({ zone_id: zid, title: "", description: "", points: 100, shift_phases: [PHASES[0]], requires_photo: false, sort_order: list.length })}>+ משימה חדשה</button>
     ${list.length === 0 && html`<div class="empty"><p>אין משימות באזור הזה</p></div>`}
     ${list.map((t) => html`<div class="list-item">
-      <div class="grow"><b>${t.title}</b><p class="small muted">${t.shift_phases.join(" · ")} · ${t.points} נק׳ ${t.requires_photo ? "· 📷 חובה" : ""}</p></div>
+      <div class="grow"><b>${t.title}</b><p class="small muted">${t.shift_phases.join(" · ")} · ${t.points} נק׳ ${t.requires_photo ? `· 📷 ${Math.max(1, Number(t.extra?.photo_count) || 1)} תמונות` : ""}</p></div>
       <button class="btn sm" onClick=${() => setEdit(t)}>עריכה</button>
     </div>`)}
     ${edit && html`<${TaskForm} task=${edit} zones=${data.zones} onClose=${() => setEdit(null)} onSaved=${() => { setEdit(null); reload(); }} />`}`;
 }
 
 function TaskForm({ task, zones, onClose, onSaved }) {
-  const [f, setF] = useState({ ...task, alt_done_label: task.extra?.alt_done_label || "" });
+  const [f, setF] = useState({ ...task, alt_done_label: task.extra?.alt_done_label || "", photo_count: task.extra?.photo_count || (task.requires_photo ? 1 : 0) });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value });
   const togglePhase = (p) => setF({ ...f, shift_phases: f.shift_phases.includes(p) ? f.shift_phases.filter((x) => x !== p) : [...f.shift_phases, p] });
   const save = async () => {
@@ -527,8 +530,8 @@ function TaskForm({ task, zones, onClose, onSaved }) {
     const row = {
       zone_id: f.zone_id, title: f.title.trim(), description: f.description || null,
       points: Number.isFinite(Number(f.points)) && f.points !== "" ? Math.max(0, Math.round(Number(f.points))) : 100,
-      shift_phases: f.shift_phases, requires_photo: !!f.requires_photo, sort_order: Number(f.sort_order) || 0,
-      extra: { ...(task.extra || {}), alt_done_label: (f.alt_done_label || "").trim() || undefined },
+      shift_phases: f.shift_phases, requires_photo: (Number(f.photo_count) || 0) > 0, sort_order: Number(f.sort_order) || 0,
+      extra: { ...(task.extra || {}), alt_done_label: (f.alt_done_label || "").trim() || undefined, photo_count: Math.max(0, Math.round(Number(f.photo_count) || 0)) },
     };
     try {
       if (task.id) await q(sb.from("tasks").update(row).eq("id", task.id));
@@ -550,7 +553,7 @@ function TaskForm({ task, zones, onClose, onSaved }) {
       <label>נקודות<input type="number" inputmode="numeric" min="0" value=${f.points} onInput=${set("points")} /></label>
       <label>סדר<input type="number" inputmode="numeric" value=${f.sort_order} onInput=${set("sort_order")} /></label>
     </div>
-    <label class="check"><input type="checkbox" checked=${f.requires_photo} onChange=${set("requires_photo")} /> חובה לצלם תמונה</label>
+    <label>כמה תמונות חובה לצלם (0 = בלי צילום)<input type="number" inputmode="numeric" min="0" max="10" value=${f.photo_count} onInput=${set("photo_count")} /></label>
     <label>סימון חלופי — שווה חצי מהנקודות (לא חובה)<input value=${f.alt_done_label || ""} onInput=${set("alt_done_label")}
       placeholder="למשל: בדקתי — אין מלאי למלא" /></label>
     <p class="small muted">כפתור נוסף שמסמן את המשימה כבוצעה עם ההערה הזאת.</p>

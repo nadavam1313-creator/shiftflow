@@ -364,3 +364,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--black-2); box-sh
 .place-pick.bowling .place-opt.on { background: #e11d26; border-color: #e11d26; color: #fff; }
 .place-pick.walter .place-opt.on { background: #1a12b5; border-color: #1a12b5; color: #fff; }
 .place-opt.on small { color: #fff; }
+.shots { margin-top: 8px; padding: 8px 10px; border-radius: 10px; background: #fff7ed; border: 1px dashed #fdba74; }
+.shot-pend { position: relative; display: inline-flex; }
+.shot-pend .icon-btn { position: absolute; top: -8px; inset-inline-end: -8px; width: 22px; height: 22px; min-height: 0; font-size: 11px; padding: 0; border-radius: 50%; }
+.thumbs { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; max-width: 50%; }
