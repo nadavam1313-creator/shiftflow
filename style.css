@@ -368,3 +368,4 @@ input:focus, select:focus, textarea:focus { border-color: var(--black-2); box-sh
 .shot-pend { position: relative; display: inline-flex; }
 .shot-pend .icon-btn { position: absolute; top: -8px; inset-inline-end: -8px; width: 22px; height: 22px; min-height: 0; font-size: 11px; padding: 0; border-radius: 50%; }
 .thumbs { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; max-width: 50%; }
+.ok-text { color: var(--ok); }

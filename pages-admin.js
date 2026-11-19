@@ -68,8 +68,60 @@ export function Leaderboard({ profile }) {
           </table>
         </div>`}
     ${admin && !loading && !error && html`<${BonusPanel} month=${month} bonus=${data.bonus} onSaved=${(r) => setData((d) => ({ ...d, bonus: r }))} />`}
+    ${admin && html`<${AdjustPanel} month=${month} me=${profile.full_name || profile.email} onChanged=${reload} />`}
   </div>`;
 }
+
+// admin: manual bonus / deduction of points (counted in the competition of that month)
+function AdjustPanel({ month, me, onChanged }) {
+  const [form, setForm] = useState({ email: "", points: "", date: todayIL(), reason: "" });
+  const [busy, setBusy] = useState(false);
+  const { data, reload } = useLoad(async () => {
+    const [people, adj] = await Promise.all([
+      q(sb.from("profiles").select("email,full_name,role").neq("role", "pending").order("full_name")),
+      q(sb.from("points_adjustments").select("*").order("adj_date", { ascending: false })),
+    ]);
+    return { people, adj: adj.filter((a) => a.adj_date.slice(0, 7) === month) };
+  }, [month]);
+  const names = Object.fromEntries((data?.people || []).map((p) => [p.email, p.full_name]));
+  const add = async () => {
+    const pts = Math.round(Number(form.points));
+    if (!form.email || !pts) return toast("בחר עובד וכתוב כמה נקודות (מינוס להורדה)", "bad");
+    setBusy(true);
+    try {
+      await q(sb.from("points_adjustments").insert({ employee_email: form.email, points: pts, adj_date: form.date, reason: form.reason.trim() || null, created_by: me }).select());
+      toast(pts > 0 ? `נוספו ${pts} נקודות ✓` : `הורדו ${-pts} נקודות ✓`);
+      setForm({ ...form, points: "", reason: "" }); reload(); onChanged();
+    } catch (e) { toast(e.message, "bad"); } finally { setBusy(false); }
+  };
+  const del = async (a) => {
+    if (!window.confirm(`למחוק את התיקון של ${names[a.employee_email] || a.employee_email} (${a.points} נק׳)?`)) return;
+    try { await q(sb.from("points_adjustments").delete().eq("id", a.id).select()); reload(); onChanged(); }
+    catch (e) { toast(e.message, "bad"); }
+  };
+  return html`<div class="card">
+    <b>➕➖ תיקוני ניקוד ידניים</b>
+    <p class="small muted">בונוס או הורדה לעובד — נספר בטבלה של החודש. רק אתה רואה את זה.</p>
+    ${(data?.adj || []).map((a) => html`<div class="board-row small">
+      <span class=${a.points > 0 ? "ok-text" : "warn-text"}><b>${a.points > 0 ? "+" : ""}${a.points}</b></span>
+      <div class="grow"><b>${names[a.employee_email] || a.employee_email}</b> · ${formatShortDate(a.adj_date)}${a.reason ? html`<div class="muted">${a.reason}</div>` : ""}</div>
+      <button class="icon-btn" title="מחק" onClick=${() => del(a)}>🗑</button>
+    </div>`)}
+    <div class="stack mt">
+      <select value=${form.email} onChange=${(e) => setForm({ ...form, email: e.target.value })}>
+        <option value="">בחר עובד…</option>
+        ${(data?.people || []).map((p) => html`<option value=${p.email}>${p.full_name}</option>`)}
+      </select>
+      <div class="row gap">
+        <input type="number" inputmode="numeric" placeholder="נקודות (למשל 200 או -200)" value=${form.points} onInput=${(e) => setForm({ ...form, points: e.target.value })} />
+        <input type="date" value=${form.date} onInput=${(e) => setForm({ ...form, date: e.target.value })} />
+      </div>
+      <input placeholder="סיבה (לא חובה)" value=${form.reason} onInput=${(e) => setForm({ ...form, reason: e.target.value })} />
+      <button class="btn primary" disabled=${busy} onClick=${add}>שמור תיקון</button>
+    </div>
+  </div>`;
+}
+const formatShortDate = (k) => { const [y, m, d] = k.split("-"); return `${+d}.${+m}`; };
 
 function BonusPanel({ month, bonus, onSaved }) {
   const d = bonus?.data || {};
