@@ -167,7 +167,55 @@ export function ManagerDashboard({ profile }) {
       </div>` : html`<div class="grow"></div>`}
       <input type="date" class="date-in" value=${date} onInput=${(e) => e.target.value && setDate(e.target.value)} />
     </div>
+    ${mgr && tab === "tasks" && html`<${PhotoReview} me=${profile.full_name || profile.email} />`}
     ${tab === "tasks" || !mgr ? html`<${CompletionsBoard} date=${date} cats=${cats} canReview=${mgr} me=${profile.email} />` : html`<${ActivityLog} date=${date} />`}
+  </div>`;
+}
+
+// managers: look at the photos of every task done and approve (points count) or reject (no points)
+function PhotoReview({ me }) {
+  const [lightbox, setLightbox] = useState(null);
+  const [busyId, setBusyId] = useState(null);
+  const { loading, error, data, reload, setData } = useLoad(async () => {
+    const since = addDaysKey(todayIL(), -14);
+    const [comps, tasks, zones, people] = await Promise.all([
+      q(sb.from("task_completions").select("*").eq("status", "done").gt("photos_needed", 0).is("photo_review", null).gte("shift_date", since).order("updated_at", { ascending: false }).limit(200)),
+      q(sb.from("tasks").select("id,title,zone_id,points")),
+      q(sb.from("zones").select("id,name,category")),
+      q(sb.from("profiles").select("email,full_name")),
+    ]);
+    return { comps, tasks: Object.fromEntries(tasks.map((t) => [t.id, t])), zones: Object.fromEntries(zones.map((z) => [z.id, z])), names: Object.fromEntries(people.map((p) => [p.email, p.full_name])) };
+  }, []);
+  if (loading) return html`<${Spinner} />`;
+  if (error) return html`<${ErrorBox} error=${error} retry=${reload} />`;
+  const { comps, tasks, zones, names } = data;
+  const decide = async (c, verdict) => {
+    setBusyId(c.id);
+    try {
+      await q(sb.from("task_completions").update({ photo_review: verdict, photo_reviewed_by: me }).eq("id", c.id).select());
+      setData((d) => ({ ...d, comps: d.comps.filter((x) => x.id !== c.id) }));
+      toast(verdict === "approved" ? "אושר — הנקודות נספרו ✓" : "נדחה — העובד לא מקבל נקודות על המשימה");
+    } catch (e) { toast(e.message, "bad"); } finally { setBusyId(null); }
+  };
+  return html`<div class="card review-card">
+    <div class="row between"><b>📷 תמונות לאישור (${comps.length})</b><button class="link small" onClick=${reload}>רענן</button></div>
+    <p class="small muted">כל משימה שצולמה מחכה כאן. אשרו — העובד מקבל את הנקודות. דחו — לא מקבל, ויכול לצלם שוב.</p>
+    ${comps.length === 0 && html`<p class="small mt">✓ אין משימות שמחכות לאישור</p>`}
+    ${comps.map((c) => {
+      const t = tasks[c.task_id] || {}; const z = zones[c.zone_id] || {};
+      const phs = (c.photo_urls?.length ? c.photo_urls : c.photo_url ? [c.photo_url] : []).map(safeUrl).filter(Boolean);
+      return html`<div class="review-item">
+        <div class="row between gap"><div><b>${t.title || "משימה"}</b>
+          <div class="small muted">${z.category ? z.category + " · " : ""}${z.name || ""} · ${names[c.completed_by] || c.completed_by} · ${c.shift_date === todayIL() ? "היום" : c.shift_date.slice(8, 10) + "." + c.shift_date.slice(5, 7)} ${formatTime(c.updated_at)}</div></div>
+          <span class="pill">${t.points || 0} נק׳</span></div>
+        <div class="review-photos">${phs.map((u) => html`<img src=${u} loading="lazy" onClick=${() => setLightbox(u)} />`)}</div>
+        <div class="row gap mt">
+          <button class="btn ok grow" disabled=${busyId === c.id} onClick=${() => decide(c, "approved")}>✓ אשר ותן נקודות</button>
+          <button class="btn bad grow" disabled=${busyId === c.id} onClick=${() => decide(c, "rejected")}>✗ דחה — לא בוצע כמו שצריך</button>
+        </div>
+      </div>`;
+    })}
+    ${lightbox && html`<div class="lightbox" onClick=${() => setLightbox(null)}><img src=${lightbox} /></div>`}
   </div>`;
 }
 
@@ -282,6 +330,7 @@ function CompletionsBoard({ date, cats = CATEGORIES, canReview = false, me = "" 
                   <span>${t.title}</span>
                   ${c && html`<div class="muted">${who(c.completed_by)} · ${formatTime(c.updated_at)}${missingPhoto ? ` · חסרות תמונות (${phs.length}/${needN})` : ""}</div>`}
                   ${c && offShift(c) && html`<div class="warn-text">🚩 ${offShift(c)} · ${reviewLabel(c)}</div>`}
+                  ${c && (c.photos_needed || 0) > 0 && html`<div class=${c.photo_review === "rejected" ? "warn-text" : "muted"}>${c.photo_review === "approved" ? "📷 ✓ התמונות אושרו" : c.photo_review === "rejected" ? "📷 ✗ נדחה — אין נקודות" : "📷 ⏳ ממתין לאישור תמונות"}</div>`}
                   ${c?.distance_m != null && html`<div class=${c.distance_m > 300 ? "warn-text" : "muted"}>📍 ${c.distance_m > 300 ? "🚩 " : ""}${c.distance_m < 1000 ? c.distance_m + " מ׳" : (c.distance_m / 1000).toFixed(1) + " ק״מ"} מהפארק</div>`}
                   ${c?.notes && html`<div class="note-line">📝 ${c.notes}</div>`}
                 </div>

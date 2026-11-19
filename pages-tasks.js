@@ -217,6 +217,7 @@ function TaskItem({ task, completion, lockedByOther, paused, who, onUpdate }) {
         ${task.description && html`<p class="muted small">${task.description}</p>`}
         ${completion && html`<p class="small muted">${status === "done" ? "✓ בוצע" : "✗ לא בוצע"} · ${completion.completed_by} · ${formatTime(completion.updated_at)}</p>`}
         ${completion?.notes && html`<p class="small note-line">📝 ${completion.notes}</p>`}
+        ${status === "done" && (completion?.photos_needed || 0) > 0 && html`<p class=${"small " + (completion.photo_review === "rejected" ? "warn-text" : "muted")}>${completion.photo_review === "approved" ? "✓ התמונות אושרו — הנקודות נספרו" : completion.photo_review === "rejected" ? "✗ המנהל דחה את המשימה — לא בוצעה כמו שצריך. בצעו שוב וצלמו מחדש" : "⏳ ממתין לאישור המנהל על התמונות — הנקודות ייספרו אחרי האישור"}</p>`}
         ${completion?.off_schedule && html`<p class="small warn-text">${completion.review_status === "approved" ? "✓ אושר ע״י המנהל" : completion.review_status === "rejected" ? "✗ נדחה ע״י המנהל — לא נספרות נקודות" : "⏳ לא היית משובץ במשמרת — ממתין לאישור מנהל לפני שהנקודות נספרות"}</p>`}
       </div>
       <div class="stack-xs">
