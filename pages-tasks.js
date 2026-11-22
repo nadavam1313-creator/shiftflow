@@ -94,6 +94,10 @@ export function ZoneTasks({ profile, zoneId }) {
   const doneIds = new Set(comps.filter((c) => c.status === "done").map((c) => c.task_id));
   const doneCount = tasks.filter((t) => doneIds.has(t.id)).length;
   const phaseTasks = tasks.filter((t) => t.shift_phases.includes(activePhase));
+  // a task is done once an hour, by one employee: a mark of it (in any part of the shift) in the last 60 minutes locks it
+  const recentDone = (taskId, exceptId) => comps
+    .filter((c) => c.task_id === taskId && c.id !== exceptId && c.status === "done" && !c.void_reason && Date.now() - new Date(c.updated_at).getTime() < 60 * 60000)
+    .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))[0];
 
   const update = async (task, updates) => {
     const existing = compFor(task.id);
@@ -104,6 +108,11 @@ export function ZoneTasks({ profile, zoneId }) {
         toast(`לא ניתן לסמן שוב — יש להמתין עוד ${Math.ceil(MIN_MINUTES_BETWEEN_COMPLETIONS - mins)} דקות`, "bad");
         return false;
       }
+    }
+    const recent = updates.status === "done" && existing?.status !== "done" && recentDone(task.id, existing?.id);
+    if (recent && !mgr) {
+      toast(`המשימה כבר סומנה כבוצעה ב-${formatTime(recent.updated_at)} — אפשר לבצע אותה שוב רק שעה אחרי`, "bad");
+      return false;
     }
     if (existing && existing.completed_by !== profile.email && !mgr) {
       toast("המשימה כבר סומנה ע״י עובד אחר", "bad");
@@ -146,12 +155,14 @@ export function ZoneTasks({ profile, zoneId }) {
       : phaseTasks.map((t) => {
           const c = compFor(t.id);
           const lockedByOther = !!c && c.completed_by !== profile.email && !mgr;
-          return html`<${TaskItem} key=${t.id + activePhase} task=${t} completion=${c} lockedByOther=${lockedByOther} paused=${isPaused(profile)} who=${profile.full_name || profile.email} onUpdate=${(u) => update(t, u)} />`;
+          const recent = !mgr && c?.status !== "done" && recentDone(t.id, c?.id);
+          const hourLock = recent ? `✓ בוצעה ב-${formatTime(recent.updated_at)}${recent.completed_by !== profile.email ? " ע״י עובד אחר" : ""} · אפשר לבצע שוב אחרי ${formatTime(new Date(new Date(recent.updated_at).getTime() + 60 * 60000).toISOString())}` : null;
+          return html`<${TaskItem} key=${t.id + activePhase} task=${t} completion=${c} lockedByOther=${lockedByOther} hourLock=${hourLock} paused=${isPaused(profile)} who=${profile.full_name || profile.email} onUpdate=${(u) => update(t, u)} />`;
         })}
   </div>`;
 }
 
-function TaskItem({ task, completion, lockedByOther, paused, who, onUpdate }) {
+function TaskItem({ task, completion, lockedByOther, hourLock, paused, who, onUpdate }) {
   const [busy, setBusy] = useState(false);
   const [lightbox, setLightbox] = useState(false);
   const status = completion?.status;
@@ -217,7 +228,8 @@ function TaskItem({ task, completion, lockedByOther, paused, who, onUpdate }) {
         ${task.description && html`<p class="muted small">${task.description}</p>`}
         ${completion && html`<p class="small muted">${status === "done" ? "✓ בוצע" : "✗ לא בוצע"} · ${completion.completed_by} · ${formatTime(completion.updated_at)}</p>`}
         ${completion?.notes && html`<p class="small note-line">📝 ${completion.notes}</p>`}
-        ${status === "done" && (completion?.photos_needed || 0) > 0 && html`<p class=${"small " + (completion.photo_review === "rejected" ? "warn-text" : "muted")}>${completion.photo_review === "approved" ? "✓ התמונות אושרו — הנקודות נספרו" : completion.photo_review === "rejected" ? "✗ המנהל דחה את המשימה — לא בוצעה כמו שצריך. בצעו שוב וצלמו מחדש" : "⏳ ממתין לאישור המנהל על התמונות — הנקודות ייספרו אחרי האישור"}</p>`}
+        ${completion?.void_reason && html`<p class="small warn-text">🚫 לא נספר: ${completion.void_reason}</p>`}
+        ${status === "done" && (completion?.photos_needed || 0) > 0 && html`<p class=${"small " + (completion.photo_review === "rejected" ? "warn-text" : "muted")}>${completion.photo_review === "approved" ? "✓ התמונות אושרו — הנקודות נספרו" : completion.photo_review === "rejected" ? `✗ המנהל דחה את המשימה${completion.review_note ? ` — ${completion.review_note}` : ""}. בצעו שוב וצלמו מחדש` : "⏳ ממתין לאישור המנהל על התמונות — הנקודות ייספרו אחרי האישור"}</p>`}
         ${completion?.off_schedule && html`<p class="small warn-text">${completion.review_status === "approved" ? "✓ אושר ע״י המנהל" : completion.review_status === "rejected" ? "✗ נדחה ע״י המנהל — לא נספרות נקודות" : "⏳ לא היית משובץ במשמרת — ממתין לאישור מנהל לפני שהנקודות נספרות"}</p>`}
       </div>
       <div class="stack-xs">
@@ -229,6 +241,8 @@ function TaskItem({ task, completion, lockedByOther, paused, who, onUpdate }) {
       ? html`<p class="small muted" style="margin-top:8px">⏸️ סימון משימות ייפתח ב${LAUNCH_LABEL}</p>`
       : lockedByOther
       ? html`<p class="small muted" style="margin-top:8px">🔒 סומן ע״י עובד אחר</p>`
+      : hourLock
+      ? html`<p class="small muted" style="margin-top:8px">⏱️ ${hourLock}</p>`
       : html`<div class="row gap wrap" style="margin-top:8px">
           ${task.requires_photo
             ? html`<label class=${"btn sm ok" + (busy ? " busy" : "")}>${busy ? "מעלה…" : need > 1 ? `📷 צלם ${Math.min(pending.length + 1, need)} מתוך ${need}` : "📷 בוצע — צלם"}<input type="file" accept="image/*" capture="environment" hidden disabled=${busy} onChange=${(e) => uploadPhoto(e.target)} /></label>`

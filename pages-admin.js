@@ -179,7 +179,7 @@ function PhotoReview({ me }) {
   const { loading, error, data, reload, setData } = useLoad(async () => {
     const since = addDaysKey(todayIL(), -14);
     const [comps, tasks, zones, people] = await Promise.all([
-      q(sb.from("task_completions").select("*").eq("status", "done").gt("photos_needed", 0).is("photo_review", null).gte("shift_date", since).order("updated_at", { ascending: false }).limit(200)),
+      q(sb.from("task_completions").select("*").eq("status", "done").gt("photos_needed", 0).is("photo_review", null).is("void_reason", null).gte("shift_date", since).order("updated_at", { ascending: false }).limit(200)),
       q(sb.from("tasks").select("id,title,zone_id,points")),
       q(sb.from("zones").select("id,name,category")),
       q(sb.from("profiles").select("email,full_name")),
@@ -189,10 +189,14 @@ function PhotoReview({ me }) {
   if (loading) return html`<${Spinner} />`;
   if (error) return html`<${ErrorBox} error=${error} retry=${reload} />`;
   const { comps, tasks, zones, names } = data;
-  const decide = async (c, verdict) => {
+  const [rejecting, setRejecting] = useState(null); // the mark being rejected (asks for a reason)
+  const [reason, setReason] = useState("");
+  const REASONS = ["התמונה לא ברורה — לא רואים שהמשימה בוצעה", "המשימה לא בוצעה כמו שצריך", "התמונה לא מהמקום הנכון / לא קשורה למשימה", "כפילות — המשימה כבר בוצעה"];
+  const decide = async (c, verdict, note = null) => {
     setBusyId(c.id);
     try {
-      await q(sb.from("task_completions").update({ photo_review: verdict, photo_reviewed_by: me }).eq("id", c.id).select());
+      await q(sb.from("task_completions").update({ photo_review: verdict, photo_reviewed_by: me, review_note: note }).eq("id", c.id).select());
+      setRejecting(null); setReason("");
       setData((d) => ({ ...d, comps: d.comps.filter((x) => x.id !== c.id) }));
       toast(verdict === "approved" ? "אושר — הנקודות נספרו ✓" : "נדחה — העובד לא מקבל נקודות על המשימה");
     } catch (e) { toast(e.message, "bad"); } finally { setBusyId(null); }
@@ -211,11 +215,18 @@ function PhotoReview({ me }) {
         <div class="review-photos">${phs.map((u) => html`<img src=${u} loading="lazy" onClick=${() => setLightbox(u)} />`)}</div>
         <div class="row gap mt">
           <button class="btn ok grow" disabled=${busyId === c.id} onClick=${() => decide(c, "approved")}>✓ אשר ותן נקודות</button>
-          <button class="btn bad grow" disabled=${busyId === c.id} onClick=${() => decide(c, "rejected")}>✗ דחה — לא בוצע כמו שצריך</button>
+          <button class="btn bad grow" disabled=${busyId === c.id} onClick=${() => { setRejecting(c); setReason(""); }}>✗ דחה</button>
         </div>
       </div>`;
     })}
     ${lightbox && html`<div class="lightbox" onClick=${() => setLightbox(null)}><img src=${lightbox} /></div>`}
+    ${rejecting && html`<${Modal} title="למה המשימה נדחתה?" onClose=${() => setRejecting(null)}>
+      <p class="small muted">${tasks[rejecting.task_id]?.title || ""} · ${names[rejecting.completed_by] || rejecting.completed_by}</p>
+      <p class="small muted">העובד יראה את הסיבה ליד המשימה.</p>
+      <div class="stack mt">${REASONS.map((r) => html`<button class=${"btn " + (reason === r ? "primary" : "")} onClick=${() => setReason(r)}>${r}</button>`)}</div>
+      <textarea class="mt" rows="2" placeholder="או כתבו סיבה אחרת…" value=${REASONS.includes(reason) ? "" : reason} onInput=${(e) => setReason(e.target.value)}></textarea>
+      <button class="btn bad wide mt" disabled=${!reason.trim() || busyId === rejecting.id} onClick=${() => decide(rejecting, "rejected", reason.trim())}>✗ דחה — העובד לא מקבל נקודות</button>
+    <//>`}
   </div>`;
 }
 
@@ -330,7 +341,8 @@ function CompletionsBoard({ date, cats = CATEGORIES, canReview = false, me = "" 
                   <span>${t.title}</span>
                   ${c && html`<div class="muted">${who(c.completed_by)} · ${formatTime(c.updated_at)}${missingPhoto ? ` · חסרות תמונות (${phs.length}/${needN})` : ""}</div>`}
                   ${c && offShift(c) && html`<div class="warn-text">🚩 ${offShift(c)} · ${reviewLabel(c)}</div>`}
-                  ${c && (c.photos_needed || 0) > 0 && html`<div class=${c.photo_review === "rejected" ? "warn-text" : "muted"}>${c.photo_review === "approved" ? "📷 ✓ התמונות אושרו" : c.photo_review === "rejected" ? "📷 ✗ נדחה — אין נקודות" : "📷 ⏳ ממתין לאישור תמונות"}</div>`}
+                  ${c?.void_reason && html`<div class="warn-text">🚫 לא נספר: ${c.void_reason}</div>`}
+                  ${c && (c.photos_needed || 0) > 0 && html`<div class=${c.photo_review === "rejected" ? "warn-text" : "muted"}>${c.photo_review === "approved" ? "📷 ✓ התמונות אושרו" : c.photo_review === "rejected" ? `📷 ✗ נדחה${c.review_note ? ": " + c.review_note : ""} — אין נקודות` : "📷 ⏳ ממתין לאישור תמונות"}</div>`}
                   ${c?.distance_m != null && html`<div class=${c.distance_m > 300 ? "warn-text" : "muted"}>📍 ${c.distance_m > 300 ? "🚩 " : ""}${c.distance_m < 1000 ? c.distance_m + " מ׳" : (c.distance_m / 1000).toFixed(1) + " ק״מ"} מהפארק</div>`}
                   ${c?.notes && html`<div class="note-line">📝 ${c.notes}</div>`}
                 </div>
