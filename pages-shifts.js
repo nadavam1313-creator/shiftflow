@@ -20,7 +20,8 @@ export function ShiftRequest({ profile }) {
 function ShiftRequestForm({ profile }) {
   const weekStart = nextWeekSunday();
   const day = dayOfWeekIL();
-  const open = day >= 2 && day <= 4; // submission window: Tuesday–end of Thursday
+  const hourIL = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Jerusalem", hour: "2-digit", hourCycle: "h23" }).format(new Date()));
+  const open = day === 2 || day === 3 || (day === 4 && hourIL < 12); // submission window: Tuesday – Thursday 12:00
   const [avail, setAvail] = useState({});
   const [slotNotes, setSlotNotes] = useState({});
   const [notes, setNotes] = useState("");
@@ -104,7 +105,7 @@ function ShiftRequestForm({ profile }) {
   if (!open) {
     return html`<div class="empty">
       <p class="huge">🕐</p><p class="big">הגשת משמרות</p>
-      <p class="muted">ההגשה פתוחה מיום שלישי בבוקר עד סוף יום חמישי.</p>
+      <p class="muted">ההגשה פתוחה מיום שלישי בבוקר עד יום חמישי בשעה 12:00.</p>
       <p class="muted">השבוע הקרוב: <b>${formatWeekRange(weekStart)}</b></p>
       ${existing && html`<a class="btn" href="#/schedule">לסידור העבודה</a>`}
     </div>`;
@@ -120,7 +121,7 @@ function ShiftRequestForm({ profile }) {
     </div>`}
     ${existing && !locked && html`<div class="note ok">✓ המנהלת פתחה לך את ההגשה לעריכה — אפשר לעדכן</div>`}
 
-    ${!locked && html`<div class="note small">📌 לפחות ${MIN_SHIFTS} משמרות${weekendFree ? "" : html`, ומהן <b>לפחות אחת בסופ״ש</b> (חמישי, שישי או מוצ״ש)`}. רוצים לצאת מוקדם או להגיע מאוחר? לחצו על 💬 ליד המשמרת וכתבו הערה — ${MANAGER_NAME} תחליט על השיבוץ. ההגשה נסגרת בסוף יום חמישי.</div>`}
+    ${!locked && html`<div class="note small">📌 לפחות ${MIN_SHIFTS} משמרות${weekendFree ? "" : html`, ומהן <b>לפחות אחת בסופ״ש</b> (חמישי, שישי או מוצ״ש)`}. רוצים לצאת מוקדם או להגיע מאוחר? לחצו על 💬 ליד המשמרת וכתבו הערה — ${MANAGER_NAME} תחליט על השיבוץ. ההגשה נסגרת ביום חמישי בשעה 12:00.</div>`}
     ${!locked && friday.status === "required" && html`<div class="note bad"><b>⚠️ השבוע חובה להגיש משמרת שישי.</b>
       <p class="small">לא הגשת משמרת שישי ב-${friday.weeks_without} השבועות האחרונים. כל עובד מחויב למשמרת שישי אחת לפחות כל ${friday.limit} שבועות — בלי שישי לא ניתן להגיש.</p></div>`}
     ${!locked && friday.status === "warn" && html`<div class="note warn"><b>📅 שים לב — משמרת שישי</b>
