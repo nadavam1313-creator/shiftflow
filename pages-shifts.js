@@ -20,7 +20,7 @@ export function ShiftRequest({ profile }) {
 function ShiftRequestForm({ profile }) {
   const weekStart = nextWeekSunday();
   const day = dayOfWeekIL();
-  const open = day >= 2 && day <= 3; // submission window: Tuesday–end of Wednesday (Thursday closed)
+  const open = day >= 2 && day <= 4; // submission window: Tuesday–end of Thursday
   const [avail, setAvail] = useState({});
   const [slotNotes, setSlotNotes] = useState({});
   const [notes, setNotes] = useState("");
@@ -99,7 +99,7 @@ function ShiftRequestForm({ profile }) {
   if (!open) {
     return html`<div class="empty">
       <p class="huge">🕐</p><p class="big">הגשת משמרות</p>
-      <p class="muted">ההגשה פתוחה מיום שלישי בבוקר עד סוף יום רביעי. ביום חמישי ההגשה סגורה.</p>
+      <p class="muted">ההגשה פתוחה מיום שלישי בבוקר עד סוף יום חמישי.</p>
       <p class="muted">השבוע הקרוב: <b>${formatWeekRange(weekStart)}</b></p>
       ${existing && html`<a class="btn" href="#/schedule">לסידור העבודה</a>`}
     </div>`;
@@ -115,7 +115,7 @@ function ShiftRequestForm({ profile }) {
     </div>`}
     ${existing && !locked && html`<div class="note ok">✓ המנהלת פתחה לך את ההגשה לעריכה — אפשר לעדכן</div>`}
 
-    ${!locked && html`<div class="note small">📌 לפחות ${MIN_SHIFTS} משמרות${weekendFree ? "" : html`, ומהן <b>לפחות אחת בסופ״ש</b> (חמישי, שישי או מוצ״ש)`}. רוצים לצאת מוקדם או להגיע מאוחר? לחצו על 💬 ליד המשמרת וכתבו הערה — ${MANAGER_NAME} תחליט על השיבוץ. ההגשה נסגרת בסוף יום רביעי.</div>`}
+    ${!locked && html`<div class="note small">📌 לפחות ${MIN_SHIFTS} משמרות${weekendFree ? "" : html`, ומהן <b>לפחות אחת בסופ״ש</b> (חמישי, שישי או מוצ״ש)`}. רוצים לצאת מוקדם או להגיע מאוחר? לחצו על 💬 ליד המשמרת וכתבו הערה — ${MANAGER_NAME} תחליט על השיבוץ. ההגשה נסגרת בסוף יום חמישי.</div>`}
     ${openMornings.length > 0 && html`<div class="note ok">☀️ השבוע אפשר להגיש גם משמרות בוקר${holidayNames.length ? ` (${holidayNames.join(", ")})` : ""}</div>`}
     ${DAYS.map((d, i) => {
       const shifts = DAY_SHIFTS[d.key].filter((s) => isOpen(`${d.key}_${s}`));
