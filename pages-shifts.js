@@ -29,12 +29,16 @@ function ShiftRequestForm({ profile }) {
   const [justSubmitted, setJustSubmitted] = useState(false);
 
   const [settings, setSettings] = useState({ open_slots: [], closed_slots: [] });
+  // Friday rule: after N weeks in a row without a Friday shift, this week must include Friday
+  const [friday, setFriday] = useState({});
   const { loading, error, data: existing, reload, setData } = useLoad(async () => {
-    const [row, ws] = await Promise.all([
+    const [row, ws, fri] = await Promise.all([
       q(sb.from("shift_submissions").select("*").eq("employee_email", profile.email).eq("week_start", weekStart).maybeSingle()),
       loadWeekSettings(weekStart),
+      sb.rpc("my_friday_status", { p_week: weekStart }).then((r) => r.data || {}),
     ]);
     setSettings(ws);
+    setFriday(fri);
     return row;
   }, [weekStart]);
   // an employee allowed weekday mornings (e.g. the regular morning worker) can submit every shift
@@ -58,6 +62,7 @@ function ShiftRequestForm({ profile }) {
   const submit = async () => {
     if (count < MIN_SHIFTS) return toast(`יש לבחור לפחות ${MIN_SHIFTS} משמרות (בחרת ${count})`, "bad");
     if (!hasWeekend) return toast("חובה לבחור לפחות משמרת אחת בסופ״ש — חמישי, שישי או מוצ״ש", "bad");
+    if (friday.status === "required" && !avail.friday_morning) return toast(`השבוע חובה לבחור משמרת שישי — לא הגשת שישי ב-${friday.weeks_without} השבועות האחרונים`, "bad");
     setBusy(true);
     const row = {
       employee_email: profile.email,
@@ -116,6 +121,10 @@ function ShiftRequestForm({ profile }) {
     ${existing && !locked && html`<div class="note ok">✓ המנהלת פתחה לך את ההגשה לעריכה — אפשר לעדכן</div>`}
 
     ${!locked && html`<div class="note small">📌 לפחות ${MIN_SHIFTS} משמרות${weekendFree ? "" : html`, ומהן <b>לפחות אחת בסופ״ש</b> (חמישי, שישי או מוצ״ש)`}. רוצים לצאת מוקדם או להגיע מאוחר? לחצו על 💬 ליד המשמרת וכתבו הערה — ${MANAGER_NAME} תחליט על השיבוץ. ההגשה נסגרת בסוף יום חמישי.</div>`}
+    ${!locked && friday.status === "required" && html`<div class="note bad"><b>⚠️ השבוע חובה להגיש משמרת שישי.</b>
+      <p class="small">לא הגשת משמרת שישי ב-${friday.weeks_without} השבועות האחרונים. כל עובד מחויב למשמרת שישי אחת לפחות כל ${friday.limit} שבועות — בלי שישי לא ניתן להגיש.</p></div>`}
+    ${!locked && friday.status === "warn" && html`<div class="note warn"><b>📅 שים לב — משמרת שישי</b>
+      <p class="small">כל עובד מחויב למשמרת שישי אחת לפחות כל ${friday.limit} שבועות. ${friday.limit - 1 === 1 ? "בשבוע שעבר" : `ב-${friday.limit - 1} השבועות האחרונים`} לא הגשת שישי — אם גם השבוע לא תגיש שישי, <b>בשבוע הבא תהיה חייב</b>.</p></div>`}
     ${openMornings.length > 0 && html`<div class="note ok">☀️ השבוע אפשר להגיש גם משמרות בוקר${holidayNames.length ? ` (${holidayNames.join(", ")})` : ""}</div>`}
     ${DAYS.map((d, i) => {
       const shifts = DAY_SHIFTS[d.key].filter((s) => isOpen(`${d.key}_${s}`));
