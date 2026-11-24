@@ -316,3 +316,6 @@ async function trackLogin(p) {
 
 render(html`<${App} />`, document.getElementById("app"));
 window.__sfReady && window.__sfReady();
+
+// Close an open photo viewer with Esc (desktop)
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") document.querySelector(".lightbox")?.click(); });

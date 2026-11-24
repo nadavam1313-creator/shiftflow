@@ -90,8 +90,9 @@ form > * + *, .modal > * + * { margin-top: 12px; }
 .task { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
 .task.done { border-color: #bfe9d6; background: #f6fdf9; } .task.notdone { border-color: #f6caca; background: #fffafa; }
 .thumb { width: 44px; height: 44px; border-radius: 10px; object-fit: cover; border: 2px solid var(--primary); cursor: pointer; }
-.lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 60; display: grid; place-items: center; padding: 16px; }
-.lightbox img { max-width: 100%; max-height: 100%; border-radius: 12px; }
+.lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.88); z-index: 60; display: flex; align-items: center; justify-content: center; padding: 16px; cursor: zoom-out; overflow: hidden; }
+.lightbox img { display: block; width: auto; height: auto; max-width: min(96vw, 1100px); max-height: calc(100vh - 80px); max-height: calc(100dvh - 80px); object-fit: contain; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,.5); cursor: zoom-out; }
+.lightbox::after { content: "✕  סגירה (לחיצה בכל מקום או Esc)"; position: fixed; top: 14px; inset-inline-start: 14px; background: rgba(255,255,255,.14); color: #fff; font-size: 13px; font-weight: 600; padding: 7px 12px; border-radius: 999px; pointer-events: none; }
 .date-in { width: auto; }
 
 /* shifts */
